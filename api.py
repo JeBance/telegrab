@@ -765,6 +765,11 @@ async def update_config(config_data: dict, api_key: str = Depends(get_api_key)):
     """Обновить конфигурацию через UI"""
     global CONFIG
     
+    # Проверяем изменились ли критические параметры
+    critical_changed = False
+    old_api_id = CONFIG.get('API_ID')
+    old_phone = CONFIG.get('PHONE')
+    
     # Обновляем только разрешённые параметры
     allowed_keys = ['API_ID', 'API_HASH', 'PHONE', 'REQUESTS_PER_SECOND', 
                     'MESSAGES_PER_REQUEST', 'HISTORY_LIMIT_PER_CHAT', 
@@ -782,19 +787,28 @@ async def update_config(config_data: dict, api_key: str = Depends(get_api_key)):
             else:
                 CONFIG[key] = value
     
+    # Проверяем изменились ли критические параметры (требующие перезапуска)
+    if old_api_id != CONFIG.get('API_ID') or old_phone != CONFIG.get('PHONE'):
+        critical_changed = True
+    
     # Сохраняем в .env
     save_config_to_env()
     
-    return {'status': 'ok', 'message': 'Конфигурация обновлена'}
+    return {
+        'status': 'ok', 
+        'message': 'Конфигурация обновлена',
+        'restart_required': critical_changed
+    }
 
 @app.post("/restart")
 async def restart_telegram(api_key: str = Depends(get_api_key)):
-    """Перезапустить Telegram клиента с новой конфигурацией"""
-    try:
-        result = await tg_client.restart()
-        return {'status': 'ok', 'message': 'Telegram клиент перезапущен'}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'Ошибка перезапуска: {str(e)}')
+    """Перезапустить Telegram клиента (возвращает статус что требуется перезапуск процесса)"""
+    # Telethon не поддерживает горячую перезагрузку сессии
+    # Возвращаем сигнал UI что требуется перезапуск процесса
+    return {
+        'status': 'restart_required', 
+        'message': 'Требуется перезапуск процесса telegrab.py для применения новых настроек'
+    }
 
 @app.get("/telegram_status")
 async def get_telegram_status(api_key: str = Depends(get_api_key)):
@@ -1195,52 +1209,9 @@ class TelegramClientWrapper:
             await self.handle_new_message(event)
 
         self.running = True
-        await self.client.run_until_disconnected()
-
-    async def restart(self):
-        """Перезапуск Telegram клиента с новой конфигурацией"""
-        print("\n🔄 Перезапуск Telegram клиента...")
-        self.running = False
         
-        # Остановка клиента
-        if self.client and self.client.is_connected():
-            await self.client.disconnect()
-            print("🔌 Клиент отключён")
-        
-        # Небольшая задержка перед перезапуском
-        await asyncio.sleep(1)
-        
-        # Пересоздание клиента с новыми параметрами
-        session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
-        
-        self.client = TelegramClient(
-            session=f"data/{session_name}",
-            api_id=CONFIG['API_ID'],
-            api_hash=CONFIG['API_HASH'],
-            device_model="Telegrab UserBot",
-            app_version="4.0.0",
-            system_version="Linux"
-        )
-        
-        await self.client.connect()
-        print("✅ Клиент перезапущен")
-        
-        # Запуск обработчика задач
-        asyncio.create_task(task_queue.process_tasks(self.client))
-        
-        # Автозагрузка
-        if CONFIG['AUTO_LOAD_MISSED']:
-            await self.auto_load_missed()
-        if CONFIG['AUTO_LOAD_HISTORY']:
-            await self.auto_load_history()
-        
-        # Обработчик новых сообщений
-        @self.client.on(events.NewMessage)
-        async def message_handler(event):
-            await self.handle_new_message(event)
-        
-        self.running = True
-        return True
+        # Запускаем клиент в фоне, а не блокирующе
+        asyncio.create_task(self.client.run_until_disconnected())
 
     async def get_status(self):
         """Получение статуса Telegram клиента"""
@@ -1251,6 +1222,12 @@ class TelegramClientWrapper:
             return {'connected': False, 'message': 'Клиент отключён'}
         
         try:
+            # Проверяем авторизацию без get_me() для избежания проблем с event loop
+            is_authorized = await self.client.is_user_authorized()
+            if not is_authorized:
+                return {'connected': False, 'message': 'Требуется авторизация'}
+            
+            # Получаем информацию о пользователе
             me = await self.client.get_me()
             return {
                 'connected': True,

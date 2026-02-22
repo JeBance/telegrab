@@ -333,28 +333,31 @@ async function checkTelegramStatus() {
 
 // Перезапуск Telegram
 async function restartTelegram() {
-    if (!confirm('Перезапустить Telegram клиент? Это применит новые настройки конфигурации.')) return;
-
     const statusDiv = document.getElementById('restartStatus');
-    if (statusDiv) {
-        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Перезапуск...</div>';
-    }
-
+    
     try {
         const result = await apiRequest('/restart', { method: 'POST' });
         
         if (statusDiv) {
-            statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ ' + result.message + '</div>';
+            if (result.status === 'restart_required') {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Требуется перезапуск процесса</strong><br>
+                        ${result.message}<br><br>
+                        <small>Остановите сервер (Ctrl+C) и запустите снова: <code>python telegrab.py</code></small>
+                    </div>
+                `;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> ${result.message}</div>`;
+            }
         }
         
-        addLog('Telegram перезапущен', 'success');
-        
-        // Проверяем статус через 2 секунды
-        setTimeout(checkTelegramStatus, 2000);
+        addLog('Запрошен перезапуск Telegram', 'info');
     } catch (e) {
-        console.error('❌ Ошибка перезапуска:', e);
+        console.error('❌ Ошибка:', e);
         if (statusDiv) {
-            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка перезапуска: ${e.message}</div>`;
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
         }
     }
 }
@@ -592,30 +595,37 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 
     const statusDiv = document.getElementById('restartStatus');
     if (statusDiv) {
-        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение и перезапуск...</div>';
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение конфигурации...</div>';
     }
 
     try {
         // Отправляем конфигурацию на сервер
-        await apiRequest('/config', {
+        const result = await apiRequest('/config', {
             method: 'POST',
             body: JSON.stringify(configData)
         });
         
-        // Перезапускаем Telegram клиент
-        await apiRequest('/restart', { method: 'POST' });
+        addLog('Настройки сохранены', 'success');
         
-        addLog('Настройки сохранены и Telegram перезапущен', 'success');
-        
-        if (statusDiv) {
-            statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ Настройки сохранены и применены!</div>';
+        if (result.restart_required) {
+            if (statusDiv) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Конфигурация сохранена!</strong><br>
+                        Для применения новых настроек Telegram требуется перезапуск процесса.<br><br>
+                        <small>Остановите сервер (Ctrl+C) и запустите снова: <code>python telegrab.py</code></small>
+                    </div>
+                `;
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ Настройки сохранены!</div>';
+            }
         }
         
-        // Проверяем статус через 2 секунды
-        setTimeout(() => {
-            checkTelegramStatus();
-            loadSettings();
-        }, 2000);
+        // Обновляем статус
+        setTimeout(checkTelegramStatus, 1000);
     } catch (e) {
         console.error('❌ Ошибка сохранения настроек:', e);
         if (statusDiv) {
