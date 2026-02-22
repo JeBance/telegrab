@@ -172,9 +172,10 @@ class Database:
                 VALUES (?, ?, ?, ?, ?, ?)
             ''', (message_id, chat_id, chat_title, text, sender_name, message_date))
 
+            saved = cursor.rowcount > 0
             conn.commit()
             conn.close()
-            return True
+            return saved
         except Exception as e:
             print(f"❌ Ошибка сохранения: {e}")
             return False
@@ -229,11 +230,14 @@ class Database:
 
             if result:
                 try:
-                    date_str = result.replace('Z', '+00:00')
+                    # Нормализация формата даты
+                    date_str = str(result).replace('Z', '+00:00')
+                    # Убираем микросекунды если есть
                     if '.' in date_str:
-                        date_str = date_str.split('.')[0] + '+00:00'
+                        date_str = date_str.split('.')[0] + date_str[-6:] if '+' in date_str or date_str.endswith('Z') else date_str.split('.')[0]
                     return datetime.fromisoformat(date_str)
-                except:
+                except Exception as e:
+                    print(f"⚠️ Ошибка парсинга даты: {e}")
                     return None
             return None
         except Exception as e:
@@ -443,34 +447,36 @@ class TaskQueue:
                 task['status'] = 'processing'
                 task['started_at'] = datetime.now().isoformat()
 
-                if task['type'] == 'load_history':
-                    await self.process_load_history(client, task)
-                elif task['type'] == 'join_and_load':
-                    await self.process_join_and_load(client, task)
-                elif task['type'] == 'load_missed':
-                    await self.process_load_missed(client, task)
+                try:
+                    if task['type'] == 'load_history':
+                        await self.process_load_history(client, task)
+                    elif task['type'] == 'join_and_load':
+                        await self.process_join_and_load(client, task)
+                    elif task['type'] == 'load_missed':
+                        await self.process_load_missed(client, task)
+
+                    task['status'] = 'completed'
+                    task['completed_at'] = datetime.now().isoformat()
+
+                    await manager.broadcast({
+                        'type': 'task_completed',
+                        'task': task
+                    })
+                except Exception as e:
+                    task['status'] = 'failed'
+                    task['error'] = str(e)
+                    task['completed_at'] = datetime.now().isoformat()
+                    print(f"❌ Ошибка выполнения задачи {task['id']}: {e}")
 
                 self.last_request_time = time.time()
-                task['status'] = 'completed'
-                task['completed_at'] = datetime.now().isoformat()
-
-                await manager.broadcast({
-                    'type': 'task_completed',
-                    'task': task
-                })
 
             except Empty:
                 continue
             except Exception as e:
-                if 'task' in locals():
-                    task['status'] = 'failed'
-                    task['error'] = str(e)
+                print(f"❌ Ошибка обработчика задач: {e}")
 
     async def process_load_history(self, client, task):
         """Обработка задачи загрузки истории"""
-        from telethon.tl.functions.channels import JoinChannelRequest
-        from telethon.tl.functions.messages import ImportChatInviteRequest
-        
         chat_id = task['data']['chat_id']
         limit = task['data'].get('limit', 0)
 
@@ -485,8 +491,9 @@ class TaskQueue:
         chat = await join_chat(client, chat_identifier)
 
         if chat:
+            limit = task['data'].get('limit', 0)
             result = await load_chat_history_with_rate_limit(
-                client, chat.id, limit=0, task_id=task['id']
+                client, chat.id, limit=limit, task_id=task['id']
             )
             task['result'] = {
                 'chat': {'id': chat.id, 'title': getattr(chat, 'title', '')},
@@ -595,8 +602,7 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):
         
         print(f"📞 Получение диалогов (limit={limit})...")
         dialogs_list = []
-        # force=True для получения актуального списка
-        async for dialog in tg_client.client.iter_dialogs(limit=limit, force=True):
+        async for dialog in tg_client.client.iter_dialogs(limit=limit):
             if dialog.is_group or dialog.is_channel:
                 dialogs_list.append({
                     'id': dialog.id,
@@ -754,6 +760,84 @@ async def get_config(api_key: str = Depends(get_api_key)):
         'MAX_CHATS_TO_LOAD': CONFIG['MAX_CHATS_TO_LOAD']
     }
 
+@app.post("/config")
+async def update_config(config_data: dict, api_key: str = Depends(get_api_key)):
+    """Обновить конфигурацию через UI"""
+    global CONFIG
+    
+    # Обновляем только разрешённые параметры
+    allowed_keys = ['API_ID', 'API_HASH', 'PHONE', 'REQUESTS_PER_SECOND', 
+                    'MESSAGES_PER_REQUEST', 'HISTORY_LIMIT_PER_CHAT', 
+                    'MAX_CHATS_TO_LOAD', 'AUTO_LOAD_HISTORY', 'AUTO_LOAD_MISSED']
+    
+    for key in allowed_keys:
+        if key in config_data:
+            value = config_data[key]
+            if key in ['API_ID', 'API_PORT', 'HISTORY_LIMIT_PER_CHAT',
+                      'MAX_CHATS_TO_LOAD', 'REQUESTS_PER_SECOND',
+                      'MESSAGES_PER_REQUEST', 'MISSED_DAYS_LIMIT']:
+                CONFIG[key] = int(value) if str(value).isdigit() else value
+            elif key in ['AUTO_LOAD_HISTORY', 'AUTO_LOAD_MISSED']:
+                CONFIG[key] = str(value).lower() in ['true', 'yes', '1', 'on']
+            else:
+                CONFIG[key] = value
+    
+    # Сохраняем в .env
+    save_config_to_env()
+    
+    return {'status': 'ok', 'message': 'Конфигурация обновлена'}
+
+@app.post("/restart")
+async def restart_telegram(api_key: str = Depends(get_api_key)):
+    """Перезапустить Telegram клиента с новой конфигурацией"""
+    try:
+        result = await tg_client.restart()
+        return {'status': 'ok', 'message': 'Telegram клиент перезапущен'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'Ошибка перезапуска: {str(e)}')
+
+@app.get("/telegram_status")
+async def get_telegram_status(api_key: str = Depends(get_api_key)):
+    """Получить статус Telegram клиента"""
+    status = await tg_client.get_status()
+    return status
+
+def save_config_to_env():
+    """Сохранение текущей конфигурации в .env"""
+    env_file = '.env'
+    lines = []
+    updated = set()
+    
+    try:
+        with open(env_file, 'r') as f:
+            for line in f:
+                if '=' in line and not line.startswith('#'):
+                    key = line.split('=', 1)[0].strip()
+                    if key in CONFIG:
+                        value = CONFIG[key]
+                        lines.append(f'{key}={value}\n')
+                        updated.add(key)
+                    else:
+                        lines.append(line)
+                else:
+                    lines.append(line)
+    except FileNotFoundError:
+        pass
+    
+    # Добавляем новые параметры
+    for key, value in CONFIG.items():
+        if key not in updated:
+            lines.append(f'{key}={value}\n')
+    
+    with open(env_file, 'w') as f:
+        f.writelines(lines)
+
+def set_config_from_ui(key, value):
+    """Обновление отдельного параметра конфигурации"""
+    global CONFIG
+    CONFIG[key] = value
+    save_config_to_env()
+
 # ==================== WEBSOCKET ====================
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -835,8 +919,9 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
         message_count = 0
         last_message_date = None
+        has_more_messages = True
 
-        while True:
+        while has_more_messages:
             await asyncio.sleep(1.0 / CONFIG['REQUESTS_PER_SECOND'])
 
             request_limit = CONFIG['MESSAGES_PER_REQUEST']
@@ -876,14 +961,16 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
             if message_count % 100 == 0:
                 db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
 
+            # Проверяем есть ли ещё сообщения
+            if len(messages) < request_limit:
+                has_more_messages = False
+
+            # Если задан лимит и он достигнут
             if limit > 0 and message_count >= limit:
                 break
 
-            if len(messages) < request_limit:
-                db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded=True)
-                break
-
-        fully_loaded = (limit == 0 and len(messages) < CONFIG['MESSAGES_PER_REQUEST'])
+        # Определяем полностью ли загружен чат
+        fully_loaded = (limit == 0 and not has_more_messages)
         db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded)
 
         await manager.broadcast({
@@ -917,7 +1004,18 @@ async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=
         last_message_date = None
 
         async for message in client.iter_messages(chat, limit=limit, offset_date=since_dt):
-            if message.date <= since_dt or not message.text:
+            # Пропускаем сообщения без текста
+            if not message.text:
+                continue
+            
+            # Сравниваем даты корректно
+            msg_date = message.date
+            if msg_date.tzinfo is None and since_dt.tzinfo is not None:
+                msg_date = msg_date.replace(tzinfo=since_dt.tzinfo)
+            elif msg_date.tzinfo is not None and since_dt.tzinfo is None:
+                since_dt = since_dt.replace(tzinfo=msg_date.tzinfo)
+            
+            if msg_date <= since_dt:
                 continue
 
             sender = await message.get_sender()
@@ -1098,6 +1196,72 @@ class TelegramClientWrapper:
 
         self.running = True
         await self.client.run_until_disconnected()
+
+    async def restart(self):
+        """Перезапуск Telegram клиента с новой конфигурацией"""
+        print("\n🔄 Перезапуск Telegram клиента...")
+        self.running = False
+        
+        # Остановка клиента
+        if self.client and self.client.is_connected():
+            await self.client.disconnect()
+            print("🔌 Клиент отключён")
+        
+        # Небольшая задержка перед перезапуском
+        await asyncio.sleep(1)
+        
+        # Пересоздание клиента с новыми параметрами
+        session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
+        
+        self.client = TelegramClient(
+            session=f"data/{session_name}",
+            api_id=CONFIG['API_ID'],
+            api_hash=CONFIG['API_HASH'],
+            device_model="Telegrab UserBot",
+            app_version="4.0.0",
+            system_version="Linux"
+        )
+        
+        await self.client.connect()
+        print("✅ Клиент перезапущен")
+        
+        # Запуск обработчика задач
+        asyncio.create_task(task_queue.process_tasks(self.client))
+        
+        # Автозагрузка
+        if CONFIG['AUTO_LOAD_MISSED']:
+            await self.auto_load_missed()
+        if CONFIG['AUTO_LOAD_HISTORY']:
+            await self.auto_load_history()
+        
+        # Обработчик новых сообщений
+        @self.client.on(events.NewMessage)
+        async def message_handler(event):
+            await self.handle_new_message(event)
+        
+        self.running = True
+        return True
+
+    async def get_status(self):
+        """Получение статуса Telegram клиента"""
+        if not self.client:
+            return {'connected': False, 'message': 'Клиент не инициализирован'}
+        
+        if not self.client.is_connected():
+            return {'connected': False, 'message': 'Клиент отключён'}
+        
+        try:
+            me = await self.client.get_me()
+            return {
+                'connected': True,
+                'user_id': me.id,
+                'first_name': me.first_name,
+                'last_name': me.last_name,
+                'username': me.username,
+                'phone': CONFIG['PHONE']
+            }
+        except Exception as e:
+            return {'connected': False, 'message': str(e)}
 
     async def handle_new_message(self, event):
         """Обработка нового сообщения"""

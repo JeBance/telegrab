@@ -19,25 +19,27 @@ document.addEventListener('DOMContentLoaded', () => {
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
-    
+
     ws = new WebSocket(wsUrl);
-    
+
     ws.onopen = () => {
         document.getElementById('connectionStatus').className = 'status-dot status-online';
         document.getElementById('connectionText').textContent = 'Подключено';
         addLog('WebSocket подключён', 'success');
     };
-    
+
     ws.onclose = () => {
         document.getElementById('connectionStatus').className = 'status-dot status-offline';
         document.getElementById('connectionText').textContent = 'Отключено';
+        addLog('WebSocket отключён. Переподключение...', 'warning');
         setTimeout(initWebSocket, 3000); // Переподключение
     };
-    
+
     ws.onerror = (e) => {
         console.error('WebSocket error:', e);
+        document.getElementById('connectionText').textContent = 'Ошибка';
     };
-    
+
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
@@ -117,24 +119,29 @@ async function loadStats() {
 async function loadChats() {
     try {
         console.log('🔄 Загрузка чатов...');
-        
+
         // Загружаем чаты из базы данных
         const dbData = await apiRequest('/chats');
         console.log('📦 Чаты из БД:', dbData);
-        
-        // Загружаем диалоги из Telegram
-        const tgData = await apiRequest('/dialogs?limit=100');
-        console.log('📞 Диалоги из Telegram:', tgData);
-        
+
+        // Загружаем диалоги из Telegram (может быть ошибка если клиент не подключён)
+        let tgData = { dialogs: [] };
+        try {
+            tgData = await apiRequest('/dialogs?limit=100');
+            console.log('📞 Диалоги из Telegram:', tgData);
+        } catch (e) {
+            console.warn('⚠️ Не удалось загрузить диалоги из Telegram:', e.message);
+        }
+
         const chatFilter = document.getElementById('messageChatFilter');
-        
+
         // Обновляем фильтр чатов для сообщений
         chatFilter.innerHTML = '<option value="">Все чаты</option>';
-        
+
         // Объединяем данные: сначала чаты с сообщениями, потом новые диалоги
         const dbChatIds = new Set();
         const rows = [];
-        
+
         // Чаты из базы данных
         if (dbData.chats && dbData.chats.length > 0) {
             dbData.chats.forEach(chat => {
@@ -246,17 +253,109 @@ async function loadMessages() {
 // Загрузка настроек
 async function loadSettings() {
     try {
-        // Получаем текущие значения из API
-        const root = await apiRequest('/');
+        // Получаем текущие значения из API /config
+        const config = await apiRequest('/config');
+        console.log('📋 Загрузка настроек:', config);
+
+        // Заполняем форму Telegram API
+        document.getElementById('settingApiId').value = config.API_ID || '';
+        document.getElementById('settingApiHash').value = config.API_HASH || '';
+        document.getElementById('settingPhone').value = config.PHONE || '';
         
-        // Заполняем форму (значения по умолчанию)
+        // API Key
         document.getElementById('settingApiKey').value = apiKey || 'Не установлен';
-        document.getElementById('settingRequestsPerSecond').value = localStorage.getItem('requests_per_second') || 1;
-        document.getElementById('settingMessagesPerRequest').value = localStorage.getItem('messages_per_request') || 100;
-        document.getElementById('settingHistoryLimit').value = localStorage.getItem('history_limit') || 200;
-        document.getElementById('settingMaxChats').value = localStorage.getItem('max_chats') || 20;
+        
+        // Параметры загрузки
+        document.getElementById('settingRequestsPerSecond').value = config.REQUESTS_PER_SECOND || 1;
+        document.getElementById('settingMessagesPerRequest').value = config.MESSAGES_PER_REQUEST || 100;
+        document.getElementById('settingHistoryLimit').value = config.HISTORY_LIMIT_PER_CHAT || 200;
+        document.getElementById('settingMaxChats').value = config.MAX_CHATS_TO_LOAD || 20;
+        
+        // Показываем статус подключения
+        updateTelegramStatus(config);
+        
+        // Проверяем статус Telegram клиента
+        checkTelegramStatus();
     } catch (e) {
-        console.error('Failed to load settings:', e);
+        console.error('❌ Ошибка загрузки настроек:', e);
+    }
+}
+
+function updateTelegramStatus(config) {
+    const hasConfig = config.API_ID && config.API_HASH && config.PHONE;
+    const statusDiv = document.getElementById('telegramStatus');
+    
+    if (statusDiv) {
+        if (hasConfig) {
+            statusDiv.innerHTML = '<span class="badge bg-success">✅ Telegram настроен</span>';
+        } else {
+            statusDiv.innerHTML = '<span class="badge bg-warning">⚠️ Требуется настройка Telegram</span>';
+        }
+    }
+}
+
+// Проверка статуса Telegram
+async function checkTelegramStatus() {
+    try {
+        const status = await apiRequest('/telegram_status');
+        const statusDiv = document.getElementById('restartStatus');
+        
+        if (statusDiv) {
+            if (status.connected) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> 
+                        <strong>Telegram подключён</strong><br>
+                        Пользователь: ${status.first_name} ${status.last_name || ''} (@${status.username || 'нет username'})<br>
+                        ID: ${status.user_id} | Phone: ${status.phone}
+                    </div>
+                `;
+            } else {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Telegram не подключён</strong><br>
+                        ${status.message || 'Требуется настройка и авторизация'}
+                    </div>
+                `;
+            }
+        }
+        return status;
+    } catch (e) {
+        console.error('❌ Ошибка проверки статуса:', e);
+        const statusDiv = document.getElementById('restartStatus');
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+        }
+        return { connected: false, message: e.message };
+    }
+}
+
+// Перезапуск Telegram
+async function restartTelegram() {
+    if (!confirm('Перезапустить Telegram клиент? Это применит новые настройки конфигурации.')) return;
+
+    const statusDiv = document.getElementById('restartStatus');
+    if (statusDiv) {
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Перезапуск...</div>';
+    }
+
+    try {
+        const result = await apiRequest('/restart', { method: 'POST' });
+        
+        if (statusDiv) {
+            statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ ' + result.message + '</div>';
+        }
+        
+        addLog('Telegram перезапущен', 'success');
+        
+        // Проверяем статус через 2 секунды
+        setTimeout(checkTelegramStatus, 2000);
+    } catch (e) {
+        console.error('❌ Ошибка перезапуска:', e);
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка перезапуска: ${e.message}</div>`;
+        }
     }
 }
 
@@ -475,17 +574,54 @@ function addLog(message, type = 'info') {
 }
 
 // Обработка форм
-document.getElementById('settingsForm').addEventListener('submit', (e) => {
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    // Сохраняем настройки в localStorage
-    localStorage.setItem('requests_per_second', document.getElementById('settingRequestsPerSecond').value);
-    localStorage.setItem('messages_per_request', document.getElementById('settingMessagesPerRequest').value);
-    localStorage.setItem('history_limit', document.getElementById('settingHistoryLimit').value);
-    localStorage.setItem('max_chats', document.getElementById('settingMaxChats').value);
-    
-    addLog('Настройки сохранены', 'success');
-    alert('Настройки сохранены локально. Для применения некоторых настроек требуется перезапуск бота.');
+
+    // Собираем данные конфигурации
+    const configData = {
+        API_ID: document.getElementById('settingApiId').value,
+        API_HASH: document.getElementById('settingApiHash').value,
+        PHONE: document.getElementById('settingPhone').value,
+        REQUESTS_PER_SECOND: parseInt(document.getElementById('settingRequestsPerSecond').value) || 1,
+        MESSAGES_PER_REQUEST: parseInt(document.getElementById('settingMessagesPerRequest').value) || 100,
+        HISTORY_LIMIT_PER_CHAT: parseInt(document.getElementById('settingHistoryLimit').value) || 200,
+        MAX_CHATS_TO_LOAD: parseInt(document.getElementById('settingMaxChats').value) || 20,
+        AUTO_LOAD_HISTORY: true,
+        AUTO_LOAD_MISSED: true
+    };
+
+    const statusDiv = document.getElementById('restartStatus');
+    if (statusDiv) {
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение и перезапуск...</div>';
+    }
+
+    try {
+        // Отправляем конфигурацию на сервер
+        await apiRequest('/config', {
+            method: 'POST',
+            body: JSON.stringify(configData)
+        });
+        
+        // Перезапускаем Telegram клиент
+        await apiRequest('/restart', { method: 'POST' });
+        
+        addLog('Настройки сохранены и Telegram перезапущен', 'success');
+        
+        if (statusDiv) {
+            statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ Настройки сохранены и применены!</div>';
+        }
+        
+        // Проверяем статус через 2 секунды
+        setTimeout(() => {
+            checkTelegramStatus();
+            loadSettings();
+        }, 2000);
+    } catch (e) {
+        console.error('❌ Ошибка сохранения настроек:', e);
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+        }
+    }
 });
 
 // Пинг WebSocket
