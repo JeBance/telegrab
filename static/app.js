@@ -116,10 +116,15 @@ async function loadStats() {
 // Загрузка чатов
 async function loadChats() {
     try {
+        console.log('🔄 Загрузка чатов...');
+        
         // Загружаем чаты из базы данных
         const dbData = await apiRequest('/chats');
+        console.log('📦 Чаты из БД:', dbData);
+        
         // Загружаем диалоги из Telegram
         const tgData = await apiRequest('/dialogs?limit=100');
+        console.log('📞 Диалоги из Telegram:', tgData);
         
         const chatFilter = document.getElementById('messageChatFilter');
         
@@ -190,14 +195,16 @@ async function loadChats() {
         }
         
         const tbody = document.getElementById('chatsTable');
+        console.log('📊 Всего строк:', rows.length);
+        
         if (rows.length > 0) {
             tbody.innerHTML = rows.join('');
         } else {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Чатов нет. Вступите в чаты через Telegram и обновите страницу.</td></tr>';
         }
     } catch (e) {
-        console.error('Failed to load chats:', e);
-        document.getElementById('chatsTable').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки: ' + e.message + '</td></tr>';
+        console.error('❌ Ошибка загрузки чатов:', e);
+        document.getElementById('chatsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки: ${e.message}<br><small>Проверьте консоль (F12) для деталей</small></td></tr>`;
     }
 }
 
