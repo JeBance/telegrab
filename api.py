@@ -921,19 +921,38 @@ class TelegramClientWrapper:
                 print("   Настройки → Устройства → Подключить устройство")
                 print()
                 
-                import qrcode
-                import sys
-                
-                def qr_callback(code):
-                    # Генерируем QR
-                    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-                    qr.add_data(code)
-                    qr.make(fit=True)
-                    print(qr.make_image(fill_color="black", back_color="white"))
-                    print(f"\nИли перейдите по ссылке: {code}")
-                
                 try:
-                    await self.client.sign_in(qr_callback=qr_callback)
+                    from telethon.tl.functions.auth import ExportLoginTokenRequest
+                    from telethon.tl.types import auth
+                    import qrcode
+                    import base64
+                    
+                    # Запрашиваем токен для QR
+                    result = await self.client(ExportLoginTokenRequest())
+                    
+                    # Генерируем URL для QR
+                    token = base64.urlsafe_b64encode(result.token).decode().rstrip('=')
+                    qr_url = f"tg://login?token={token}"
+                    
+                    # Создаём и выводим QR-код
+                    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+                    qr.add_data(qr_url)
+                    qr.make(fit=True)
+                    qr.print_ascii(invert=True)
+                    
+                    print(f"\nИли перейдите по ссылке: {qr_url}")
+                    print("\n⏳ Ожидание сканирования... (нажмите Ctrl+C для отмены)")
+                    
+                    # Ждём пока пользователь отсканирует
+                    for i in range(60):  # Ждём до 60 секунд
+                        await asyncio.sleep(1)
+                        if await self.client.is_user_authorized():
+                            print("✅ Успешная авторизация!")
+                            break
+                    else:
+                        print("⏰ Время вышло. Попробуйте снова.")
+                        return
+                        
                 except Exception as e:
                     print(f"❌ Ошибка QR-авторизации: {e}")
                     print("   Попробуйте способ с кодом")
