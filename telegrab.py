@@ -219,54 +219,65 @@ CONFIG = load_config()
 def main():
     """Точка входа в приложение"""
     ensure_env_file()
-    
+
     global CONFIG
     CONFIG = load_config()
-    
+
     print("\n" + "="*60)
     print("                T E L E G R A B   v4.0")
     print("      UserBot + FastAPI + WebSocket + Auth")
     print("="*60)
 
-    if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
-        print("\n❌ Ошибка: задайте конфигурацию в .env файле")
-        print("   Необходимые параметры:")
-        print("   - API_ID")
-        print("   - API_HASH")
-        print("   - PHONE")
-        print("\n   Получите API ключи на https://my.telegram.org")
-        print(f"\n📝 Файл конфигурации: {os.path.abspath('.env')}")
-        sys.exit(1)
-
     os.makedirs("data", exist_ok=True)
 
-    from api import run_api_server, tg_client
+    from api import run_api_server, tg_client, set_config_from_ui
 
     print(f"\n🌐 API порт: {CONFIG['API_PORT']}")
     print(f"🔑 API ключ: {CONFIG['API_KEY']}")
     print(f"\n📚 Документация API: http://127.0.0.1:{CONFIG['API_PORT']}/docs")
+    print(f"🌐 Веб-интерфейс: http://127.0.0.1:{CONFIG['API_PORT']}/ui")
     print(f"🔌 WebSocket: ws://127.0.0.1:{CONFIG['API_PORT']}/ws")
+    
+    # Проверка конфигурации Telegram
+    if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
+        print("\n⚠️  Telegram не настроен. Настройте через веб-интерфейс:")
+        print(f"   http://127.0.0.1:{CONFIG['API_PORT']}/ui")
+        print("\n   Или отредактируйте файл .env вручную")
+    else:
+        print("\n✅ Telegram настроен. Запуск клиента...")
+
     print("\n" + "="*60)
 
     async def run_all():
         import uvicorn
-        from api import app
+        from api import app, task_queue
 
-        api_task = asyncio.create_task(
-            asyncio.to_thread(
-                uvicorn.run,
-                app,
-                host="0.0.0.0",
-                port=CONFIG['API_PORT'],
-                log_level="warning"
-            )
-        )
+        # Запуск API сервера в отдельном потоке
+        async def run_uvicorn():
+            try:
+                await asyncio.to_thread(
+                    uvicorn.run,
+                    app,
+                    host="0.0.0.0",
+                    port=CONFIG['API_PORT'],
+                    log_level="warning"
+                )
+            except Exception as e:
+                print(f"❌ Ошибка API сервера: {e}")
 
-        await asyncio.sleep(1)
+        api_task = asyncio.create_task(run_uvicorn())
+
+        # Ждём пока API сервер запустится
+        await asyncio.sleep(2)
         print("✅ API сервер запущен")
 
         print("\n🤖 Запуск Telegram UserBot...")
-        await tg_client.start()
+        try:
+            await tg_client.start()
+        except Exception as e:
+            print(f"❌ Ошибка Telegram клиента: {e}")
+            task_queue.stop()
+            raise
 
     try:
         asyncio.run(run_all())

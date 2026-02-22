@@ -10,7 +10,6 @@ services:
     volumes:
       - ./data:/app/data
       - ./.env:/app/.env:ro
-      - ./.session:/app/.session
     environment:
       - PYTHONUNBUFFERED=1
     networks:
