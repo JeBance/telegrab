@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """
 Telegrab API - FastAPI сервер с WebSocket и аутентификацией
+Упрощённая версия для стабильной работы
 """
 
 import os
 import json
 import asyncio
 import uuid
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+from queue import Queue, Empty
 
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import uvicorn
 
 # ==================== КОНФИГУРАЦИЯ ====================
@@ -26,9 +28,7 @@ def load_config():
         'PHONE': '',
         'API_PORT': 3000,
         'SESSION_STRING': '',
-        'API_KEY': '',  # Новый параметр для аутентификации
-        'TELEGRAM_MODE': 'production',  # test или production
-        'PROXY': '',  # Прокси для подключения
+        'API_KEY': '',
         'AUTO_LOAD_HISTORY': True,
         'AUTO_LOAD_MISSED': True,
         'MISSED_LIMIT_PER_CHAT': 500,
@@ -65,7 +65,6 @@ def load_config():
     # Генерируем API ключ если не задан
     if not config['API_KEY']:
         config['API_KEY'] = f"tg_{uuid.uuid4().hex[:32]}"
-        # Сохраняем в .env
         save_api_key(config['API_KEY'])
 
     return config
@@ -94,65 +93,6 @@ def save_api_key(api_key: str):
         f.writelines(lines)
 
 CONFIG = load_config()
-
-# ==================== TELEGRAM СЕРВЕРА ====================
-# Начальные адреса MTProto серверов Telegram (для первого подключения)
-# Источник: https://my.telegram.org
-TELEGRAM_INITIAL_SERVERS = {
-    'test': {
-        'dc_id': 2,
-        'server': '149.154.167.40',
-        'port': 443,
-        'public_keys': [
-            '-----BEGIN RSA PUBLIC KEY-----\n'
-            'MIIBCgKCAQEAyMEdY1aR+sCR3ZSJrtztKTKqigvO/vBfqACJLZtS7QMgCGXJ6XIR\n'
-            'yy7mx66W0/sOFa7/1mAZtEoIokDP3ShoqF4fVNb6XeqgQfaUHd8wJpDWHcR2OFwv\n'
-            'plUUI1PLTktZ9uW2WE23b+ixNwJjJGwBDJPQEQFBE+vfmH0JP503wr5INS1poWg/\n'
-            'j25sIWeYPHYeOrFp/eXaqhISP6G+q2IeTaWTXpwZj4LzXq5YOpk4bYEQ6mvRq7D1\n'
-            'aHWfYmlEGepfaYR8Q0YqvvhYtMte3ITnuSJs171+GDqpdKcSwHnd6FudwGO4pcCO\n'
-            'j4WcDuXc2CTHgH8gFTNhp/Y8/SpDOhvn9QIDAQAB\n'
-            '-----END RSA PUBLIC KEY-----'
-        ]
-    },
-    'production': {
-        'dc_id': 2,
-        'server': '149.154.167.50',
-        'port': 443,
-        'public_keys': [
-            '-----BEGIN RSA PUBLIC KEY-----\n'
-            'MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g\n'
-            '5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO\n'
-            '62cECs5HKhT5DZ98K33vmWiLowc621dQuwKWSQKjWf50XYFw42h21P2KXUGyp2y/\n'
-            '+aEyZ+uVgLLQbRA1dEjSDZ2iGRy12Mk5gpYc397aYp438fsJoHIgJ2lgMv5h7WY9\n'
-            't6N/byY9Nw9p21Og3AoXSL2q/2IJ1WRUhebgAdGVMlV1fkuOQoEzR7EdpqtQD9Cs\n'
-            '5+bfo3Nhmcyvk5ftB0WkJ9z6bNZ7yxrP8wIDAQAB\n'
-            '-----END RSA PUBLIC KEY-----'
-        ]
-    }
-}
-
-def get_telegram_config():
-    """
-    Получение конфигурации Telegram в зависимости от режима.
-    
-    Telethon автоматически вызовет help.getConfig после первого подключения
-    и получит актуальный список всех DC серверов.
-    """
-    mode = CONFIG.get('TELEGRAM_MODE', 'production').lower()
-    
-    if mode not in TELEGRAM_INITIAL_SERVERS:
-        print(f"⚠️  Неверный режим TELEGRAM_MODE='{mode}', используется production")
-        mode = 'production'
-    
-    server_config = TELEGRAM_INITIAL_SERVERS[mode]
-    
-    return {
-        'dc_id': server_config['dc_id'],
-        'server': server_config['server'],
-        'port': server_config['port'],
-        'public_keys': server_config['public_keys'],
-        'mode': mode
-    }
 
 # ==================== АУТЕНТИФИКАЦИЯ ====================
 API_KEY_NAME = "X-API-Key"
@@ -462,12 +402,11 @@ class TaskQueue:
     """Очередь задач для дозированной загрузки"""
 
     def __init__(self):
-        from queue import Queue
         self.queue = Queue()
         self.results = {}
         self.processing = False
         self.last_request_time = 0
-        self.request_interval = 1.0 / CONFIG['REQUESTS_PER_SECOND']
+        self.request_interval = 1.0 / max(CONFIG['REQUESTS_PER_SECOND'], 0.1)
 
     def add_task(self, task_id, task_type, **kwargs):
         """Добавить задачу в очередь"""
@@ -492,7 +431,6 @@ class TaskQueue:
 
         while self.processing:
             try:
-                from queue import Empty
                 task = self.queue.get(timeout=1)
 
                 current_time = time.time()
@@ -514,7 +452,6 @@ class TaskQueue:
                 task['status'] = 'completed'
                 task['completed_at'] = datetime.now().isoformat()
 
-                # Уведомляем WebSocket клиентов
                 await manager.broadcast({
                     'type': 'task_completed',
                     'task': task
@@ -573,35 +510,7 @@ class TaskQueue:
 
 task_queue = TaskQueue()
 
-# ==================== МОДЕЛИ PYDANTIC ====================
-class MessageResponse(BaseModel):
-    count: int
-    messages: List[Dict[str, Any]]
-
-class ChatResponse(BaseModel):
-    count: int
-    chats: List[Dict[str, Any]]
-
-class StatsResponse(BaseModel):
-    total_messages: int
-    total_chats: int
-    fully_loaded_chats: int
-    last_saved: str
-
-class TaskStatusResponse(BaseModel):
-    id: str
-    status: str
-    type: str
-    created_at: str
-
-class LoadTaskRequest(BaseModel):
-    chat_id: str
-    limit: Optional[int] = 0
-    join: Optional[bool] = False
-    missed: Optional[bool] = False
-
 # ==================== FASTAPI ПРИЛОЖЕНИЕ ====================
-import time
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
 
@@ -620,7 +529,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -650,18 +558,18 @@ async def health_check():
         'timestamp': datetime.now().isoformat()
     }
 
-@app.get("/stats", response_model=StatsResponse)
+@app.get("/stats")
 async def get_stats(api_key: str = Depends(get_api_key)):
-    """Статистика (требуется API ключ)"""
+    """Статистика"""
     return db.get_stats()
 
-@app.get("/chats", response_model=ChatResponse)
+@app.get("/chats")
 async def get_chats(api_key: str = Depends(get_api_key)):
-    """Список чатов (требуется API ключ)"""
+    """Список чатов"""
     chats = db.get_chats()
     return {'count': len(chats), 'chats': chats}
 
-@app.get("/messages", response_model=MessageResponse)
+@app.get("/messages")
 async def get_messages(
     chat_id: Optional[int] = None,
     limit: int = 100,
@@ -669,7 +577,7 @@ async def get_messages(
     search: Optional[str] = None,
     api_key: str = Depends(get_api_key)
 ):
-    """Получить сообщения (требуется API ключ)"""
+    """Получить сообщения"""
     messages = db.get_messages(chat_id=chat_id, limit=limit, offset=offset, search=search)
     return {'count': len(messages), 'messages': messages}
 
@@ -679,7 +587,7 @@ async def search_messages(
     limit: int = 100,
     api_key: str = Depends(get_api_key)
 ):
-    """Поиск сообщений (требуется API ключ)"""
+    """Поиск сообщений"""
     if not q:
         raise HTTPException(status_code=400, detail="Не указан поисковый запрос")
     
@@ -687,23 +595,23 @@ async def search_messages(
     return {'query': q, 'count': len(messages), 'results': messages}
 
 @app.post("/load")
-async def load_chat(
-    request: LoadTaskRequest,
-    api_key: str = Depends(get_api_key)
-):
-    """Загрузить историю чата (требуется API ключ)"""
+async def load_chat(api_key: str = Depends(get_api_key), chat_id: str = None, limit: int = 0, join: bool = False, missed: bool = False):
+    """Загрузить историю чата"""
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="Не указан chat_id")
+    
     task_id = str(uuid.uuid4())[:8]
 
-    if request.missed:
+    if missed:
         task_type = 'load_missed'
-    elif request.join:
+    elif join:
         task_type = 'join_and_load'
     else:
         task_type = 'load_history'
 
-    task_data = {'chat_id': request.chat_id}
-    if request.limit > 0:
-        task_data['limit'] = request.limit
+    task_data = {'chat_id': chat_id}
+    if limit > 0:
+        task_data['limit'] = limit
 
     task_queue.add_task(task_id=task_id, task_type=task_type, **task_data)
 
@@ -716,12 +624,12 @@ async def load_chat(
 
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str, api_key: str = Depends(get_api_key)):
-    """Статус задачи (требуется API ключ)"""
+    """Статус задачи"""
     return task_queue.get_task_status(task_id)
 
 @app.get("/queue")
 async def get_queue_status(api_key: str = Depends(get_api_key)):
-    """Статус очереди (требуется API ключ)"""
+    """Статус очереди"""
     return {
         'size': task_queue.queue.qsize(),
         'processing': task_queue.processing,
@@ -730,7 +638,7 @@ async def get_queue_status(api_key: str = Depends(get_api_key)):
 
 @app.get("/chat_status/{chat_id}")
 async def get_chat_status(chat_id: int, api_key: str = Depends(get_api_key)):
-    """Статус загрузки чата (требуется API ключ)"""
+    """Статус загрузки чата"""
     status = db.get_loading_status(chat_id)
     last_date = db.get_last_message_date_in_chat(chat_id)
     if last_date:
@@ -739,7 +647,7 @@ async def get_chat_status(chat_id: int, api_key: str = Depends(get_api_key)):
 
 @app.post("/load_missed_all")
 async def load_missed_all(api_key: str = Depends(get_api_key)):
-    """Догрузить пропущенные для всех чатов (требуется API ключ)"""
+    """Догрузить пропущенные для всех чатов"""
     chats = db.get_chats_with_messages()
     task_ids = []
 
@@ -761,7 +669,6 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # Получаем сообщения от клиента (можно использовать для команд)
             data = await websocket.receive_text()
             try:
                 message = json.loads(data)
@@ -877,13 +784,6 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
             if message_count % 100 == 0:
                 db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
-                await manager.broadcast({
-                    'type': 'loading_progress',
-                    'chat_id': chat_id,
-                    'chat_title': chat_title,
-                    'loaded': message_count,
-                    'total': total_loaded
-                })
 
             if limit > 0 and message_count >= limit:
                 break
@@ -895,7 +795,6 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         fully_loaded = (limit == 0 and len(messages) < CONFIG['MESSAGES_PER_REQUEST'])
         db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded)
 
-        # Уведомляем о завершении
         await manager.broadcast({
             'type': 'chat_loaded',
             'chat_id': chat_id,
@@ -953,7 +852,6 @@ async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=
             current_total = status.get('total_loaded', 0)
             db.update_loading_status(chat_id, 0, last_message_date, current_total + message_count)
 
-            # Уведомляем WebSocket клиентов о новых сообщениях
             await manager.broadcast({
                 'type': 'missed_loaded',
                 'chat_id': chat_id,
@@ -974,145 +872,52 @@ class TelegramClientWrapper:
     def __init__(self):
         self.client = None
         self.running = False
-        self.tg_config = get_telegram_config()
 
     async def start(self):
         """Запуск Telegram клиента"""
         if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
             print("❌ Ошибка: задайте конфигурацию в .env")
-            print(f"   API_ID: {CONFIG['API_ID']}")
-            print(f"   API_HASH: {CONFIG['API_HASH']}")
-            print(f"   PHONE: {CONFIG['PHONE']}")
             return
 
         if not await setup_telethon():
             return
-
-        # Вывод информации о режиме
-        print(f"\n🌐 Режим Telegram: {self.tg_config['mode'].upper()}")
-        print(f"   DC ID: {self.tg_config['dc_id']}")
-        print(f"   Сервер: {self.tg_config['server']}:{self.tg_config['port']}")
-        
-        if self.tg_config['mode'] == 'test':
-            print(f"\n⚠️  ВНИМАНИЕ: Используется ТЕСТОВЫЙ сервер Telegram!")
-            print(f"   - Тестовые аккаунты не работают с production серверами")
-            print(f"   - Не используйте личный номер для тестирования")
-            print(f"   - Получите тестовый номер: https://my.telegram.org/test")
-            print()
 
         session_string = CONFIG['SESSION_STRING']
         if not session_string and os.path.exists('.session'):
             try:
                 with open('.session', 'r') as f:
                     session_string = f.read().strip()
-                    print(f"💾 Найдена сохранённая сессия")
             except:
                 pass
 
         session = StringSession(session_string) if session_string else None
 
-        # Создаём клиент с указанием сервера и таймаутами
-        print(f"\n🔗 Подключение к Telegram...")
-        print(f"   API ID: {CONFIG['API_ID']}")
-        print(f"   API Hash: {CONFIG['API_HASH'][:8]}...")
-        print(f"   Phone: {CONFIG['PHONE']}")
-        
-        # Параметры прокси
-        proxy = CONFIG.get('PROXY', '')
-        if proxy:
-            print(f"🔑 Использование прокси: {proxy}")
-        
+        # Создаём клиент — Telethon сам подключится к нужному серверу
         self.client = TelegramClient(
             session=session,
             api_id=CONFIG['API_ID'],
             api_hash=CONFIG['API_HASH'],
             device_model="Telegrab UserBot",
             app_version="4.0.0",
-            system_version="Linux",
-            # Указываем сервер явно
-            dc_id=self.tg_config['dc_id'],
-            server_address=self.tg_config['server'],
-            port=self.tg_config['port'],
-            # Таймауты для диагностики
-            connection_retries=3,
-            retry_delay=5,
-            timeout=30,
-            flood_sleep_threshold=60,
-            # Прокси
-            proxy=proxy if proxy else None,
+            system_version="Linux"
         )
 
-        try:
-            # Пробуем подключиться с таймаутом
-            print("   Соединение...")
-            await asyncio.wait_for(self.client.connect(), timeout=30)
-            print("   ✅ Соединение установлено")
-        except asyncio.TimeoutError:
-            print("\n❌ Таймаут подключения к Telegram (30 сек)!")
-            print("\nВозможные причины:")
-            print("   1. MTProto протокол заблокирован провайдером")
-            print("   2. Брандмауэр блокирует подключение")
-            print("   3. Telegram заблокирован в вашей сети")
-            print("\nРешения:")
-            print("   1. Используйте VPN")
-            print("   2. Настройте прокси в .env:")
-            print("      PROXY=socks5://user:pass@proxy:1080")
-            print("   3. Попробуйте mobile API (через эмулятор)")
-            return
-        except ConnectionResetError as e:
-            print(f"\n❌ Соединение сброшено: {e}")
-            print("   Скорее всего MTProto заблокирован")
-            print("   Используйте VPN или прокси")
-            return
-        except Exception as e:
-            print(f"\n❌ Ошибка подключения: {type(e).__name__}: {e}")
-            return
+        await self.client.connect()
 
         if not await self.client.is_user_authorized():
             print("🔐 Требуется авторизация...")
-            print(f"📱 Отправка кода на {CONFIG['PHONE']}...")
-            
-            try:
-                sent_code = await self.client.send_code_request(CONFIG['PHONE'])
-                print("✅ Код отправлен! Проверьте:")
-                print("   1. Чат с @Telegram в приложении Telegram")
-                print("   2. SMS (если приложение недоступно)")
-                print("   3. Голосовой звонок через 1-2 минуты")
-                print()
-                
-                # Проверяем тип отправленного кода
-                if hasattr(sent_code, 'type') and sent_code.type:
-                    code_type = str(sent_code.type)
-                    if 'sms' in code_type.lower():
-                        print("ℹ️  Код будет отправлен через SMS")
-                    elif 'call' in code_type.lower():
-                        print("ℹ️  Код будет продиктован голосом")
-                    else:
-                        print(f"ℹ️  Тип кода: {code_type}")
-                print()
-                
-                code = input("✉️  Введите код из SMS: ")
-                await self.client.sign_in(CONFIG['PHONE'], code)
+            await self.client.send_code_request(CONFIG['PHONE'])
+            code = input("✉️ Введите код из SMS: ")
+            await self.client.sign_in(CONFIG['PHONE'], code)
 
-                new_session_string = self.client.session.save()
-                if new_session_string:
-                    with open('.session', 'w') as f:
-                        f.write(new_session_string)
-                    print("💾 Сессия сохранена")
-                    
-            except Exception as e:
-                print(f"❌ Ошибка авторизации: {type(e).__name__}: {e}")
-                if "PHONE_NUMBER_INVALID" in str(e):
-                    print("   Проверьте формат номера (без +, например 79991234567)")
-                elif "SESSION_PASSWORD_NEEDED" in str(e):
-                    print("   У вас включена двухфакторная аутентификация (2FA)")
-                    print("   Используйте номер без 2FA или отключите её временно")
-                return
+            new_session_string = self.client.session.save()
+            if new_session_string:
+                with open('.session', 'w') as f:
+                    f.write(new_session_string)
+                print("💾 Сессия сохранена")
 
         me = await self.client.get_me()
-        print(f"✅ Авторизован как: {me.first_name} {me.last_name or ''}")
-        print(f"   Username: @{me.username or 'нет'}")
-        print(f"   ID: {me.id}")
+        print(f"✅ Авторизован как: {me.first_name}")
 
         # Запуск обработчика задач
         asyncio.create_task(task_queue.process_tasks(self.client))
@@ -1129,7 +934,6 @@ class TelegramClientWrapper:
             await self.handle_new_message(event)
 
         self.running = True
-        print("\n👂 Слушаем новые сообщения...")
         await self.client.run_until_disconnected()
 
     async def handle_new_message(self, event):
@@ -1158,7 +962,6 @@ class TelegramClientWrapper:
                 message_date=message_date
             )
 
-            # Отправляем уведомление WebSocket клиентам
             await manager.broadcast({
                 'type': 'new_message',
                 'message': {
@@ -1176,7 +979,6 @@ class TelegramClientWrapper:
 
     async def auto_load_missed(self):
         """Автодогрузка пропущенных"""
-        from datetime import timedelta
         print("\n🔍 Автодогрузка пропущенных сообщений...")
         chats = db.get_chats_with_messages()
 

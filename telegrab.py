@@ -25,13 +25,6 @@ API_HASH=your_api_hash_here
 PHONE=+0000000000
 
 # ============================================================
-# Telegram Mode
-# test — тестовые сервера Telegram (безопасно для разработки)
-# production — боевые сервера Telegram
-# ============================================================
-TELEGRAM_MODE=production
-
-# ============================================================
 # Authentication
 # API ключ для аутентификации (генерируется автоматически)
 # ============================================================
@@ -66,7 +59,7 @@ JOIN_CHAT_TIMEOUT=10
 
 # Параметры которые должны быть в .env
 ENV_REQUIRED_PARAMS = [
-    'API_ID', 'API_HASH', 'PHONE', 'TELEGRAM_MODE',
+    'API_ID', 'API_HASH', 'PHONE',
     'API_KEY', 'API_PORT', 'AUTO_LOAD_HISTORY', 'HISTORY_LIMIT_PER_CHAT',
     'MAX_CHATS_TO_LOAD', 'AUTO_LOAD_MISSED', 'MISSED_LIMIT_PER_CHAT',
     'MISSED_DAYS_LIMIT', 'REQUESTS_PER_SECOND', 'MESSAGES_PER_REQUEST',
@@ -78,7 +71,6 @@ ENV_DEFAULTS = {
     'API_ID': '0',
     'API_HASH': 'your_api_hash_here',
     'PHONE': '+0000000000',
-    'TELEGRAM_MODE': 'production',
     'API_KEY': '',
     'API_PORT': '3000',
     'AUTO_LOAD_HISTORY': 'true',
@@ -96,21 +88,15 @@ ENV_DEFAULTS = {
 def ensure_env_file():
     """
     Проверка и создание/обновление файла .env.
-    
-    - Если файла нет — создаётся из шаблона
-    - Если файл есть — добавляются отсутствующие параметры
-    - Создаётся резервная копия при обновлении
     """
     env_file = '.env'
     env_backup = '.env.backup'
     
-    # Если файла нет — создаём из шаблона
     if not os.path.exists(env_file):
         print("📝 Файл .env не найден. Создаю из шаблона...")
         with open(env_file, 'w') as f:
             f.write(ENV_TEMPLATE)
         
-        # Генерируем API ключ
         api_key = f"tg_{uuid.uuid4().hex[:32]}"
         update_env_value('API_KEY', api_key)
         
@@ -122,7 +108,6 @@ def ensure_env_file():
         print(f"   - PHONE")
         return
     
-    # Файл есть — проверяем наличие всех параметров
     existing_params = {}
     missing_params = []
     
@@ -133,33 +118,26 @@ def ensure_env_file():
                 key, value = line.split('=', 1)
                 existing_params[key.strip()] = value.strip().strip("'\"")
     
-    # Находим отсутствующие параметры
     for param in ENV_REQUIRED_PARAMS:
         if param not in existing_params:
             missing_params.append(param)
     
-    # Если есть отсутствующие параметры — добавляем их
     if missing_params:
         print(f"📝 Обновление .env (отсутствуют: {', '.join(missing_params)})...")
-        
-        # Создаём резервную копию
         shutil.copy2(env_file, env_backup)
         print(f"💾 Резервная копия сохранена: {env_backup}")
         
-        # Добавляем отсутствующие параметры
         with open(env_file, 'a') as f:
             f.write("\n# Добавлено автоматически\n")
             for param in missing_params:
                 default_value = ENV_DEFAULTS.get(param, '')
                 if param == 'API_KEY' and not existing_params.get('API_KEY'):
-                    # Генерируем новый API ключ
                     default_value = f"tg_{uuid.uuid4().hex[:32]}"
                     print(f"🔑 Сгенерирован новый API ключ: {default_value}")
                 f.write(f"{param}={default_value}\n")
         
         print(f"✅ Файл .env обновлён")
     else:
-        # Проверяем, нужно ли сгенерировать API ключ
         if not existing_params.get('API_KEY') or existing_params.get('API_KEY') == '':
             api_key = f"tg_{uuid.uuid4().hex[:32]}"
             update_env_value('API_KEY', api_key)
@@ -167,7 +145,7 @@ def ensure_env_file():
 
 
 def update_env_value(key, value):
-    """Обновление или добавление значения параметра в .env"""
+    """Обновление значения параметра в .env"""
     env_file = '.env'
     lines = []
     found = False
@@ -200,7 +178,6 @@ def load_config():
         'API_PORT': 3000,
         'SESSION_STRING': '',
         'API_KEY': '',
-        'TELEGRAM_MODE': 'production',  # test или production
         'AUTO_LOAD_HISTORY': True,
         'AUTO_LOAD_MISSED': True,
         'MISSED_LIMIT_PER_CHAT': 500,
@@ -241,10 +218,8 @@ CONFIG = load_config()
 # ==================== ЗАПУСК ====================
 def main():
     """Точка входа в приложение"""
-    # Проверяем и создаём/обновляем .env при необходимости
     ensure_env_file()
     
-    # Перезагружаем конфигурацию после обновления .env
     global CONFIG
     CONFIG = load_config()
     
@@ -253,7 +228,6 @@ def main():
     print("      UserBot + FastAPI + WebSocket + Auth")
     print("="*60)
 
-    # Проверяем конфигурацию
     if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
         print("\n❌ Ошибка: задайте конфигурацию в .env файле")
         print("   Необходимые параметры:")
@@ -264,31 +238,17 @@ def main():
         print(f"\n📝 Файл конфигурации: {os.path.abspath('.env')}")
         sys.exit(1)
 
-    # Создаём директорию для данных
     os.makedirs("data", exist_ok=True)
 
-    # Импортируем и запускаем API сервер
-    # (импорт здесь чтобы конфигурация загрузилась первой)
-    from api import run_api_server, tg_client, get_telegram_config
-
-    # Информация о режиме Telegram
-    tg_config = get_telegram_config()
+    from api import run_api_server, tg_client
 
     print(f"\n🌐 API порт: {CONFIG['API_PORT']}")
     print(f"🔑 API ключ: {CONFIG['API_KEY']}")
-    print(f"📡 Telegram режим: {tg_config['mode'].upper()}")
-    print(f"   Сервер: {tg_config['server']}:{tg_config['port']}")
     print(f"\n📚 Документация API: http://127.0.0.1:{CONFIG['API_PORT']}/docs")
     print(f"🔌 WebSocket: ws://127.0.0.1:{CONFIG['API_PORT']}/ws")
-    
-    if tg_config['mode'] == 'test':
-        print(f"\n⚠️  ВНИМАНИЕ: ТЕСТОВЫЙ РЕЖИМ!")
-        print(f"   Используйте тестовый аккаунт Telegram")
     print("\n" + "="*60)
 
-    # Запускаем Telegram клиент в том же event loop
     async def run_all():
-        # Запускаем API сервер в background task
         import uvicorn
         from api import app
 
@@ -302,11 +262,9 @@ def main():
             )
         )
 
-        # Даём время API серверу запуститься
         await asyncio.sleep(1)
         print("✅ API сервер запущен")
 
-        # Запускаем Telegram клиент
         print("\n🤖 Запуск Telegram UserBot...")
         await tg_client.start()
 
