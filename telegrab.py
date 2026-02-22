@@ -20,6 +20,7 @@ def load_config():
         'API_PORT': 3000,
         'SESSION_STRING': '',
         'API_KEY': '',
+        'TELEGRAM_MODE': 'production',  # test или production
         'AUTO_LOAD_HISTORY': True,
         'AUTO_LOAD_MISSED': True,
         'MISSED_LIMIT_PER_CHAT': 500,
@@ -109,12 +110,21 @@ def main():
 
     # Импортируем и запускаем API сервер
     # (импорт здесь чтобы конфигурация загрузилась первой)
-    from api import run_api_server, tg_client
-    
+    from api import run_api_server, tg_client, get_telegram_config
+
+    # Информация о режиме Telegram
+    tg_config = get_telegram_config()
+
     print(f"\n🌐 API порт: {CONFIG['API_PORT']}")
     print(f"🔑 API ключ: {CONFIG['API_KEY']}")
+    print(f"📡 Telegram режим: {tg_config['mode'].upper()}")
+    print(f"   Сервер: {tg_config['server']}:{tg_config['port']}")
     print(f"\n📚 Документация API: http://127.0.0.1:{CONFIG['API_PORT']}/docs")
     print(f"🔌 WebSocket: ws://127.0.0.1:{CONFIG['API_PORT']}/ws")
+    
+    if tg_config['mode'] == 'test':
+        print(f"\n⚠️  ВНИМАНИЕ: ТЕСТОВЫЙ РЕЖИМ!")
+        print(f"   Используйте тестовый аккаунт Telegram")
     print("\n" + "="*60)
 
     # Запускаем Telegram клиент в том же event loop

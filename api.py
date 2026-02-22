@@ -27,6 +27,7 @@ def load_config():
         'API_PORT': 3000,
         'SESSION_STRING': '',
         'API_KEY': '',  # Новый параметр для аутентификации
+        'TELEGRAM_MODE': 'production',  # test или production
         'AUTO_LOAD_HISTORY': True,
         'AUTO_LOAD_MISSED': True,
         'MISSED_LIMIT_PER_CHAT': 500,
@@ -92,6 +93,59 @@ def save_api_key(api_key: str):
         f.writelines(lines)
 
 CONFIG = load_config()
+
+# ==================== TELEGRAM СЕРВЕРА ====================
+# Конфигурация MTProto серверов Telegram
+TELEGRAM_SERVERS = {
+    'test': {
+        'dc_id': 2,
+        'server': '149.154.167.40',
+        'port': 443,
+        'public_keys': [
+            '-----BEGIN RSA PUBLIC KEY-----\n'
+            'MIIBCgKCAQEAyMEdY1aR+sCR3ZSJrtztKTKqigvO/vBfqACJLZtS7QMgCGXJ6XIR\n'
+            'yy7mx66W0/sOFa7/1mAZtEoIokDP3ShoqF4fVNb6XeqgQfaUHd8wJpDWHcR2OFwv\n'
+            'plUUI1PLTktZ9uW2WE23b+ixNwJjJGwBDJPQEQFBE+vfmH0JP503wr5INS1poWg/\n'
+            'j25sIWeYPHYeOrFp/eXaqhISP6G+q2IeTaWTXpwZj4LzXq5YOpk4bYEQ6mvRq7D1\n'
+            'aHWfYmlEGepfaYR8Q0YqvvhYtMte3ITnuSJs171+GDqpdKcSwHnd6FudwGO4pcCO\n'
+            'j4WcDuXc2CTHgH8gFTNhp/Y8/SpDOhvn9QIDAQAB\n'
+            '-----END RSA PUBLIC KEY-----'
+        ]
+    },
+    'production': {
+        'dc_id': 2,
+        'server': '149.154.167.50',
+        'port': 443,
+        'public_keys': [
+            '-----BEGIN RSA PUBLIC KEY-----\n'
+            'MIIBCgKCAQEA6LszBcC1LGzyr992NzE0ieY+BSaOW622Aa9Bd4ZHLl+TuFQ4lo4g\n'
+            '5nKaMBwK/BIb9xUfg0Q29/2mgIR6Zr9krM7HjuIcCzFvDtr+L0GQjae9H0pRB2OO\n'
+            '62cECs5HKhT5DZ98K33vmWiLowc621dQuwKWSQKjWf50XYFw42h21P2KXUGyp2y/\n'
+            '+aEyZ+uVgLLQbRA1dEjSDZ2iGRy12Mk5gpYc397aYp438fsJoHIgJ2lgMv5h7WY9\n'
+            't6N/byY9Nw9p21Og3AoXSL2q/2IJ1WRUhebgAdGVMlV1fkuOQoEzR7EdpqtQD9Cs\n'
+            '5+bfo3Nhmcyvk5ftB0WkJ9z6bNZ7yxrP8wIDAQAB\n'
+            '-----END RSA PUBLIC KEY-----'
+        ]
+    }
+}
+
+def get_telegram_config():
+    """Получение конфигурации Telegram в зависимости от режима"""
+    mode = CONFIG.get('TELEGRAM_MODE', 'production').lower()
+    
+    if mode not in TELEGRAM_SERVERS:
+        print(f"⚠️  Неверный режим TELEGRAM_MODE='{mode}', используется production")
+        mode = 'production'
+    
+    server_config = TELEGRAM_SERVERS[mode]
+    
+    return {
+        'dc_id': server_config['dc_id'],
+        'server': server_config['server'],
+        'port': server_config['port'],
+        'public_keys': server_config['public_keys'],
+        'mode': mode
+    }
 
 # ==================== АУТЕНТИФИКАЦИЯ ====================
 API_KEY_NAME = "X-API-Key"
@@ -913,6 +967,7 @@ class TelegramClientWrapper:
     def __init__(self):
         self.client = None
         self.running = False
+        self.tg_config = get_telegram_config()
 
     async def start(self):
         """Запуск Telegram клиента"""
@@ -922,6 +977,18 @@ class TelegramClientWrapper:
 
         if not await setup_telethon():
             return
+
+        # Вывод информации о режиме
+        print(f"\n🌐 Режим Telegram: {self.tg_config['mode'].upper()}")
+        print(f"   DC ID: {self.tg_config['dc_id']}")
+        print(f"   Сервер: {self.tg_config['server']}:{self.tg_config['port']}")
+        
+        if self.tg_config['mode'] == 'test':
+            print(f"\n⚠️  ВНИМАНИЕ: Используется ТЕСТОВЫЙ сервер Telegram!")
+            print(f"   - Тестовые аккаунты не работают с production серверами")
+            print(f"   - Не используйте личный номер для тестирования")
+            print(f"   - Получите тестовый номер: https://my.telegram.org/test")
+            print()
 
         session_string = CONFIG['SESSION_STRING']
         if not session_string and os.path.exists('.session'):
@@ -933,13 +1000,18 @@ class TelegramClientWrapper:
 
         session = StringSession(session_string) if session_string else None
 
+        # Создаём клиент с указанием сервера
         self.client = TelegramClient(
             session=session,
             api_id=CONFIG['API_ID'],
             api_hash=CONFIG['API_HASH'],
             device_model="Telegrab UserBot",
             app_version="4.0.0",
-            system_version="Linux"
+            system_version="Linux",
+            # Указываем сервер явно
+            dc_id=self.tg_config['dc_id'],
+            server_address=self.tg_config['server'],
+            port=self.tg_config['port'],
         )
 
         await self.client.connect()
