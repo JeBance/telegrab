@@ -5,15 +5,38 @@ let apiKey = localStorage.getItem('telegrab_api_key') || '';
 let ws = null;
 let messagePage = 0;
 const MESSAGES_PER_PAGE = 50;
+let qrCheckInterval = null;
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
+    checkAuthStatus();
     initWebSocket();
-    loadStats();
-    loadChats();
-    loadSettings();
     setInterval(refreshAll, 30000); // Автообновление каждые 30 сек
 });
+
+// Проверка статуса авторизации
+async function checkAuthStatus() {
+    try {
+        const status = await apiRequest('/telegram_status');
+        
+        if (status.connected && status.user_id) {
+            // Авторизован - показываем интерфейс
+            document.getElementById('authScreen').style.display = 'none';
+            document.getElementById('mainInterface').style.display = 'block';
+            loadStats();
+            loadChats();
+            loadSettings();
+        } else {
+            // Не авторизован - показываем экран авторизации
+            document.getElementById('authScreen').style.display = 'block';
+            document.getElementById('mainInterface').style.display = 'none';
+        }
+    } catch (e) {
+        console.error('Ошибка проверки авторизации:', e);
+        document.getElementById('authScreen').style.display = 'block';
+        document.getElementById('mainInterface').style.display = 'none';
+    }
+}
 
 // WebSocket для real-time обновлений
 function initWebSocket() {
@@ -640,3 +663,107 @@ setInterval(() => {
         ws.send(JSON.stringify({ type: 'ping' }));
     }
 }, 30000);
+
+// ==================== QR АВТОРИЗАЦИЯ ====================
+
+// Показать QR авторизацию
+async function showQrAuth() {
+    const modal = new bootstrap.Modal(document.getElementById('qrAuthModal'));
+    modal.show();
+    
+    await loadQrCode();
+    
+    // Начинаем проверку статуса каждые 3 секунды
+    qrCheckInterval = setInterval(checkQrStatus, 3000);
+}
+
+// Загрузка QR-кода
+async function loadQrCode() {
+    const content = document.getElementById('qrAuthContent');
+    content.innerHTML = `
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+        <p>Генерация QR-кода...</p>
+    `;
+    
+    try {
+        const data = await apiRequest('/qr_login');
+        
+        if (data.authorized) {
+            // Уже авторизован
+            showAuthSuccess(data.user);
+            return;
+        }
+        
+        // Генерируем QR-код используя API qrcode
+        const qrCodeApi = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(data.qr_code_url)}`;
+        
+        document.getElementById('qrAuthContent').innerHTML = `
+            <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle"></i> Отсканируйте QR-код приложением Telegram:
+                <br><strong>Настройки → Устройства → Подключить устройство</strong>
+            </div>
+            <img src="${qrCodeApi}" alt="QR Code" class="img-fluid rounded mb-3" style="max-width: 250px;">
+            <p class="text-muted small">QR-код действителен 30 секунд</p>
+            <div id="qrTimer" class="text-warning"></div>
+        `;
+        
+        // Таймер обратного отсчёта
+        let timeLeft = 25;
+        const timerInterval = setInterval(() => {
+            timeLeft--;
+            const timer = document.getElementById('qrTimer');
+            if (timer) {
+                timer.textContent = `Обновление через: ${timeLeft} сек`;
+            }
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+            }
+        }, 1000);
+        
+    } catch (e) {
+        document.getElementById('qrAuthContent').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка: ${e.message}
+            </div>
+        `;
+    }
+}
+
+// Проверка статуса QR
+async function checkQrStatus() {
+    try {
+        const data = await apiRequest('/qr_login/check');
+        
+        if (data.authorized) {
+            // Успешная авторизация
+            showAuthSuccess(data.user);
+        }
+    } catch (e) {
+        console.log('Ожидание авторизации...');
+    }
+}
+
+// Показ успеха авторизации
+function showAuthSuccess(user) {
+    // Останавливаем проверку
+    if (qrCheckInterval) {
+        clearInterval(qrCheckInterval);
+        qrCheckInterval = null;
+    }
+    
+    document.getElementById('qrAuthContent').innerHTML = `
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i>
+            <h5>Успешная авторизация!</h5>
+            <p>Пользователь: <strong>${user.first_name} ${user.last_name || ''}</strong></p>
+            <p>Username: @${user.username || 'не указан'}</p>
+        </div>
+    `;
+    
+    // Перезагружаем страницу через 2 секунды
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}

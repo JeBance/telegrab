@@ -172,7 +172,34 @@
         </div>
     </nav>
 
-    <div class="container-fluid py-4">
+    <!-- Экран авторизации -->
+    <div id="authScreen" class="container-fluid py-5" style="display: none;">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-4">
+                <div class="card">
+                    <div class="card-body text-center p-4">
+                        <h4 class="mb-3"><i class="bi bi-telegram"></i> Telegrab</h4>
+                        <p class="text-muted mb-4">Требуется авторизация в Telegram</p>
+                        
+                        <div id="authStatus" class="mb-4"></div>
+                        
+                        <button class="btn btn-tg btn-lg" onclick="showQrAuth()">
+                            <i class="bi bi-qr-code"></i> Авторизоваться по QR-коду
+                        </button>
+                        
+                        <hr class="my-4">
+                        
+                        <p class="small text-muted">
+                            Отсканируйте QR-код приложением Telegram:<br>
+                            <strong>Настройки → Устройства → Подключить устройство</strong>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid py-4" id="mainInterface" style="display: none;">
         <div class="row g-4">
             <!-- Sidebar -->
             <div class="col-lg-2">
@@ -554,6 +581,31 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
                     <button type="button" class="btn btn-tg" onclick="confirmLoadHistory()">Загрузить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Authorization Modal -->
+    <div class="modal fade" id="qrAuthModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-qr-code"></i> Авторизация в Telegram</h5>
+                </div>
+                <div class="modal-body text-center">
+                    <div id="qrAuthContent">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p>Загрузка QR-кода...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" onclick="checkQrStatus()">
+                        <i class="bi bi-arrow-clockwise"></i> Проверить
+                    </button>
+                    <button type="button" class="btn btn-tg" data-bs-dismiss="modal">Закрыть</button>
                 </div>
             </div>
         </div>
