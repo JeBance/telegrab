@@ -30,11 +30,31 @@ async function checkAuthStatus() {
             // Не авторизован - показываем экран авторизации
             document.getElementById('authScreen').style.display = 'block';
             document.getElementById('mainInterface').style.display = 'none';
+            
+            // Проверяем есть ли конфигурация
+            await checkTelegramConfig();
         }
     } catch (e) {
         console.error('Ошибка проверки авторизации:', e);
         document.getElementById('authScreen').style.display = 'block';
         document.getElementById('mainInterface').style.display = 'none';
+        await checkTelegramConfig();
+    }
+}
+
+// Проверка конфигурации Telegram
+async function checkTelegramConfig() {
+    try {
+        const config = await apiRequest('/config');
+        
+        // Если конфигурация заполнена - показываем QR секцию
+        if (config.API_ID && config.API_HASH && config.PHONE && 
+            config.API_ID !== 0 && config.PHONE !== '+0000000000') {
+            document.getElementById('qrAuthSection').style.display = 'block';
+            document.getElementById('telegramConfigForm').style.display = 'none';
+        }
+    } catch (e) {
+        console.log('Конфигурация не загружена');
     }
 }
 
@@ -779,3 +799,63 @@ function showAuthSuccess(user) {
         location.reload();
     }, 2000);
 }
+
+// Обработчик формы конфигурации Telegram
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('telegramConfigForm');
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('authStatus');
+            const apiId = document.getElementById('authApiId').value;
+            const apiHash = document.getElementById('authApiHash').value;
+            const phone = document.getElementById('authPhone').value;
+            
+            if (!apiId || !apiHash || !phone) {
+                if (statusDiv) {
+                    statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Заполните все поля</div>';
+                }
+                return;
+            }
+            
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение конфигурации...</div>';
+            }
+            
+            try {
+                // Сохраняем конфигурацию
+                const configData = {
+                    API_ID: parseInt(apiId),
+                    API_HASH: apiHash,
+                    PHONE: phone,
+                    REQUESTS_PER_SECOND: 1,
+                    MESSAGES_PER_REQUEST: 100,
+                    HISTORY_LIMIT_PER_CHAT: 200,
+                    MAX_CHATS_TO_LOAD: 20,
+                    AUTO_LOAD_HISTORY: true,
+                    AUTO_LOAD_MISSED: true
+                };
+                
+                await apiRequest('/config', {
+                    method: 'POST',
+                    body: JSON.stringify(configData)
+                });
+                
+                if (statusDiv) {
+                    statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> Конфигурация сохранена!</div>';
+                }
+                
+                // Показываем секцию QR авторизации
+                document.getElementById('qrAuthSection').style.display = 'block';
+                document.getElementById('telegramConfigForm').style.display = 'none';
+                
+            } catch (e) {
+                console.error('Ошибка сохранения:', e);
+                if (statusDiv) {
+                    statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+                }
+            }
+        });
+    }
+});

@@ -175,24 +175,54 @@
     <!-- Экран авторизации -->
     <div id="authScreen" class="container-fluid py-5" style="display: none;">
         <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
+            <div class="col-md-8 col-lg-5">
                 <div class="card">
-                    <div class="card-body text-center p-4">
-                        <h4 class="mb-3"><i class="bi bi-telegram"></i> Telegrab</h4>
-                        <p class="text-muted mb-4">Требуется авторизация в Telegram</p>
+                    <div class="card-body p-4">
+                        <h4 class="mb-3 text-center"><i class="bi bi-telegram"></i> Telegrab</h4>
+                        <p class="text-muted text-center mb-4">Настройка и авторизация в Telegram</p>
                         
                         <div id="authStatus" class="mb-4"></div>
                         
-                        <button class="btn btn-tg btn-lg" onclick="showQrAuth()">
-                            <i class="bi bi-qr-code"></i> Авторизоваться по QR-коду
-                        </button>
+                        <!-- Форма настройки Telegram -->
+                        <form id="telegramConfigForm">
+                            <h6 class="mb-3"><i class="bi bi-key"></i> Данные Telegram API</h6>
+                            <p class="small text-muted">
+                                Получите API ключи на <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>
+                            </p>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">API ID <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="authApiId" required placeholder="12345678">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">API Hash <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="authApiHash" required placeholder="abcdef1234567890abcdef1234567890">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Номер телефона <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="authPhone" required placeholder="+79991234567">
+                            </div>
+                            
+                            <button type="submit" class="btn btn-tg w-100 mb-3">
+                                <i class="bi bi-save"></i> Сохранить и продолжить
+                            </button>
+                        </form>
                         
                         <hr class="my-4">
                         
-                        <p class="small text-muted">
-                            Отсканируйте QR-код приложением Telegram:<br>
-                            <strong>Настройки → Устройства → Подключить устройство</strong>
-                        </p>
+                        <!-- Кнопка QR авторизации -->
+                        <div id="qrAuthSection" style="display: none;">
+                            <button class="btn btn-tg w-100 btn-lg" onclick="showQrAuth()">
+                                <i class="bi bi-qr-code"></i> Авторизоваться по QR-коду
+                            </button>
+                            
+                            <p class="small text-muted mt-3 text-center">
+                                Отсканируйте QR-код приложением Telegram:<br>
+                                <strong>Настройки → Устройства → Подключить устройство</strong>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>

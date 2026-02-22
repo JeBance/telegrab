@@ -765,9 +765,9 @@ async def update_config(config_data: dict, api_key: str = Depends(get_api_key)):
     """Обновить конфигурацию через UI"""
     global CONFIG
     
-    # Проверяем изменились ли критические параметры
-    critical_changed = False
+    # Сохраняем старые значения для проверки изменений
     old_api_id = CONFIG.get('API_ID')
+    old_api_hash = CONFIG.get('API_HASH')
     old_phone = CONFIG.get('PHONE')
     
     # Обновляем только разрешённые параметры
@@ -787,9 +787,22 @@ async def update_config(config_data: dict, api_key: str = Depends(get_api_key)):
             else:
                 CONFIG[key] = value
     
-    # Проверяем изменились ли критические параметры (требующие перезапуска)
-    if old_api_id != CONFIG.get('API_ID') or old_phone != CONFIG.get('PHONE'):
-        critical_changed = True
+    # Проверяем изменились ли критические параметры (требующие переподключения)
+    critical_changed = (old_api_id != CONFIG.get('API_ID') or 
+                       old_api_hash != CONFIG.get('API_HASH') or 
+                       old_phone != CONFIG.get('PHONE'))
+    
+    # Если критические параметры изменились - пересоздаём клиент
+    if critical_changed and tg_client.client:
+        print(f"\n🔄 Конфигурация Telegram изменена. Пересоздание клиента...")
+        # Отключаем старый клиент
+        if tg_client.client.is_connected():
+            await tg_client.client.disconnect()
+        # Сбрасываем клиент - будет создан заново при следующем запросе
+        tg_client.client = None
+        tg_client.running = False
+        tg_client.qr_login = None
+        print("✅ Клиент сброшен. Готов к новой авторизации.")
     
     # Сохраняем в .env
     save_config_to_env()
@@ -821,7 +834,7 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
     """Получить QR-код для авторизации"""
     try:
         if not tg_client.client:
-            # Инициализируем клиент если не создан
+            # Инициализируем клиент если не создан или был сброшен
             from telethon import TelegramClient
             session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
             tg_client.client = TelegramClient(
@@ -832,9 +845,11 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
                 app_version="4.0.0",
                 system_version="Linux"
             )
+            print(f"🔌 Создание нового Telegram клиента для {CONFIG['PHONE']}...")
         
         if not tg_client.client.is_connected():
             await tg_client.client.connect()
+            print("✅ Клиент подключён")
         
         # Проверяем не авторизован ли уже
         if await tg_client.client.is_user_authorized():
@@ -845,6 +860,7 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
             }
         
         # Создаём QR login
+        print("📱 Генерация QR-кода...")
         qr_login = await tg_client.client.qr_login()
         
         # Сохраняем qr_login в клиенте для последующей проверки
