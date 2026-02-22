@@ -8,6 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Право на запись в репозиторий
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,14 +20,10 @@ jobs:
       - name: Deploy to gh-pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           folder: .
           branch: gh-pages
           clean: false
-          exclude: |
-            .git
-            .github
-            scripts
-            *.service
-            Dockerfile
-            docker-compose.yml
-            install.sh
+          clean-exclude: |
+            .gitignore
+            CNAME
