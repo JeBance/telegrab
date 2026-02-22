@@ -95,8 +95,9 @@ def save_api_key(api_key: str):
 CONFIG = load_config()
 
 # ==================== TELEGRAM СЕРВЕРА ====================
-# Конфигурация MTProto серверов Telegram
-TELEGRAM_SERVERS = {
+# Начальные адреса MTProto серверов Telegram (для первого подключения)
+# Источник: https://my.telegram.org
+TELEGRAM_INITIAL_SERVERS = {
     'test': {
         'dc_id': 2,
         'server': '149.154.167.40',
@@ -130,14 +131,19 @@ TELEGRAM_SERVERS = {
 }
 
 def get_telegram_config():
-    """Получение конфигурации Telegram в зависимости от режима"""
+    """
+    Получение конфигурации Telegram в зависимости от режима.
+    
+    Telethon автоматически вызовет help.getConfig после первого подключения
+    и получит актуальный список всех DC серверов.
+    """
     mode = CONFIG.get('TELEGRAM_MODE', 'production').lower()
     
-    if mode not in TELEGRAM_SERVERS:
+    if mode not in TELEGRAM_INITIAL_SERVERS:
         print(f"⚠️  Неверный режим TELEGRAM_MODE='{mode}', используется production")
         mode = 'production'
     
-    server_config = TELEGRAM_SERVERS[mode]
+    server_config = TELEGRAM_INITIAL_SERVERS[mode]
     
     return {
         'dc_id': server_config['dc_id'],
