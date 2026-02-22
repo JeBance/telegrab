@@ -980,6 +980,9 @@ class TelegramClientWrapper:
         """Запуск Telegram клиента"""
         if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
             print("❌ Ошибка: задайте конфигурацию в .env")
+            print(f"   API_ID: {CONFIG['API_ID']}")
+            print(f"   API_HASH: {CONFIG['API_HASH']}")
+            print(f"   PHONE: {CONFIG['PHONE']}")
             return
 
         if not await setup_telethon():
@@ -1002,6 +1005,7 @@ class TelegramClientWrapper:
             try:
                 with open('.session', 'r') as f:
                     session_string = f.read().strip()
+                    print(f"💾 Найдена сохранённая сессия")
             except:
                 pass
 
@@ -1009,6 +1013,9 @@ class TelegramClientWrapper:
 
         # Создаём клиент с указанием сервера и таймаутами
         print(f"\n🔗 Подключение к Telegram...")
+        print(f"   API ID: {CONFIG['API_ID']}")
+        print(f"   API Hash: {CONFIG['API_HASH'][:8]}...")
+        print(f"   Phone: {CONFIG['PHONE']}")
         
         # Параметры прокси
         proxy = CONFIG.get('PROXY', '')
@@ -1037,20 +1044,28 @@ class TelegramClientWrapper:
 
         try:
             # Пробуем подключиться с таймаутом
+            print("   Соединение...")
             await asyncio.wait_for(self.client.connect(), timeout=30)
+            print("   ✅ Соединение установлено")
         except asyncio.TimeoutError:
-            print("\n❌ Таймаут подключения к Telegram!")
+            print("\n❌ Таймаут подключения к Telegram (30 сек)!")
             print("\nВозможные причины:")
-            print("   1. Брандмауэр блокирует подключение")
-            print("   2. Telegram заблокирован в вашей сети")
-            print("   3. Проблемы с интернет-соединением")
+            print("   1. MTProto протокол заблокирован провайдером")
+            print("   2. Брандмауэр блокирует подключение")
+            print("   3. Telegram заблокирован в вашей сети")
             print("\nРешения:")
-            print("   • Попробуйте использовать прокси")
-            print("   • Проверьте доступность Telegram")
-            print("   • Используйте VPN")
+            print("   1. Используйте VPN")
+            print("   2. Настройте прокси в .env:")
+            print("      PROXY=socks5://user:pass@proxy:1080")
+            print("   3. Попробуйте mobile API (через эмулятор)")
+            return
+        except ConnectionResetError as e:
+            print(f"\n❌ Соединение сброшено: {e}")
+            print("   Скорее всего MTProto заблокирован")
+            print("   Используйте VPN или прокси")
             return
         except Exception as e:
-            print(f"\n❌ Ошибка подключения: {e}")
+            print(f"\n❌ Ошибка подключения: {type(e).__name__}: {e}")
             return
 
         if not await self.client.is_user_authorized():
@@ -1058,11 +1073,22 @@ class TelegramClientWrapper:
             print(f"📱 Отправка кода на {CONFIG['PHONE']}...")
             
             try:
-                await self.client.send_code_request(CONFIG['PHONE'])
+                sent_code = await self.client.send_code_request(CONFIG['PHONE'])
                 print("✅ Код отправлен! Проверьте:")
                 print("   1. Чат с @Telegram в приложении Telegram")
                 print("   2. SMS (если приложение недоступно)")
                 print("   3. Голосовой звонок через 1-2 минуты")
+                print()
+                
+                # Проверяем тип отправленного кода
+                if hasattr(sent_code, 'type') and sent_code.type:
+                    code_type = str(sent_code.type)
+                    if 'sms' in code_type.lower():
+                        print("ℹ️  Код будет отправлен через SMS")
+                    elif 'call' in code_type.lower():
+                        print("ℹ️  Код будет продиктован голосом")
+                    else:
+                        print(f"ℹ️  Тип кода: {code_type}")
                 print()
                 
                 code = input("✉️  Введите код из SMS: ")
@@ -1075,11 +1101,18 @@ class TelegramClientWrapper:
                     print("💾 Сессия сохранена")
                     
             except Exception as e:
-                print(f"❌ Ошибка авторизации: {e}")
+                print(f"❌ Ошибка авторизации: {type(e).__name__}: {e}")
+                if "PHONE_NUMBER_INVALID" in str(e):
+                    print("   Проверьте формат номера (без +, например 79991234567)")
+                elif "SESSION_PASSWORD_NEEDED" in str(e):
+                    print("   У вас включена двухфакторная аутентификация (2FA)")
+                    print("   Используйте номер без 2FA или отключите её временно")
                 return
 
         me = await self.client.get_me()
-        print(f"✅ Авторизован как: {me.first_name}")
+        print(f"✅ Авторизован как: {me.first_name} {me.last_name or ''}")
+        print(f"   Username: @{me.username or 'нет'}")
+        print(f"   ID: {me.id}")
 
         # Запуск обработчика задач
         asyncio.create_task(task_queue.process_tasks(self.client))
@@ -1096,6 +1129,7 @@ class TelegramClientWrapper:
             await self.handle_new_message(event)
 
         self.running = True
+        print("\n👂 Слушаем новые сообщения...")
         await self.client.run_until_disconnected()
 
     async def handle_new_message(self, event):
