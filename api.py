@@ -584,11 +584,19 @@ async def get_chats(api_key: str = Depends(get_api_key)):
     return {'count': len(chats), 'chats': chats}
 
 @app.get("/dialogs")
-async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 50):
+async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):
     """Получить список диалогов из Telegram"""
     try:
+        if not tg_client.client:
+            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+        
+        if not tg_client.client.is_connected():
+            raise HTTPException(status_code=503, detail="Telegram клиент не подключён")
+        
+        print(f"📞 Получение диалогов (limit={limit})...")
         dialogs_list = []
-        async for dialog in tg_client.client.iter_dialogs(limit=limit):
+        # force=True для получения актуального списка
+        async for dialog in tg_client.client.iter_dialogs(limit=limit, force=True):
             if dialog.is_group or dialog.is_channel:
                 dialogs_list.append({
                     'id': dialog.id,
@@ -597,8 +605,12 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 50):
                     'unread_count': dialog.unread_count,
                     'last_message_date': dialog.date.isoformat() if dialog.date else None
                 })
+        print(f"✅ Найдено диалогов: {len(dialogs_list)}")
         return {'count': len(dialogs_list), 'dialogs': dialogs_list}
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ Ошибка получения диалогов: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/messages")
