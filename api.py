@@ -816,6 +816,104 @@ async def get_telegram_status(api_key: str = Depends(get_api_key)):
     status = await tg_client.get_status()
     return status
 
+@app.get("/qr_login")
+async def get_qr_login(api_key: str = Depends(get_api_key)):
+    """Получить QR-код для авторизации"""
+    try:
+        if not tg_client.client:
+            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+        
+        if not tg_client.client.is_connected():
+            await tg_client.client.connect()
+        
+        # Проверяем не авторизован ли уже
+        if await tg_client.client.is_user_authorized():
+            me = await tg_client.client.get_me()
+            return {
+                'authorized': True,
+                'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username}
+            }
+        
+        # Создаём QR login
+        from telethon.tl.types import auth
+        qr_login = await tg_client.client.qr_login()
+        
+        # Сохраняем qr_login в клиенте для последующей проверки
+        tg_client.qr_login = qr_login
+        
+        return {
+            'authorized': False,
+            'qr_code_url': qr_login.url,
+            'expires_in': 30  # секунд до истечения
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/qr_login/check")
+async def check_qr_login(api_key: str = Depends(get_api_key)):
+    """Проверить статус авторизации по QR"""
+    try:
+        if not tg_client.client:
+            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+        
+        if await tg_client.client.is_user_authorized():
+            me = await tg_client.client.get_me()
+            
+            # Запуск обработчика задач
+            asyncio.create_task(task_queue.process_tasks(tg_client.client))
+            
+            # Обработчик новых сообщений
+            from telethon import events
+            @tg_client.client.on(events.NewMessage)
+            async def message_handler(event):
+                await tg_client.handle_new_message(event)
+            
+            return {
+                'authorized': True,
+                'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
+            }
+        
+        return {'authorized': False, 'message': 'Ожидание сканирования QR-кода'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/qr_login/recreate")
+async def recreate_qr_login(api_key: str = Depends(get_api_key)):
+    """Обновить QR-код (если истёк)"""
+    try:
+        if not hasattr(tg_client, 'qr_login') or not tg_client.qr_login:
+            raise HTTPException(status_code=400, detail="QR-код не создан")
+        
+        await tg_client.qr_login.recreate()
+        
+        return {
+            'qr_code_url': tg_client.qr_login.url,
+            'expires_in': 30
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/auth/password")
+async def submit_password(password: str, api_key: str = Depends(get_api_key)):
+    """Отправить облачный пароль (2FA)"""
+    try:
+        if not tg_client.client:
+            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+        
+        await tg_client.client.sign_in(password=password)
+        
+        me = await tg_client.client.get_me()
+        
+        # Запуск обработчика задач
+        asyncio.create_task(task_queue.process_tasks(tg_client.client))
+        
+        return {
+            'authorized': True,
+            'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f'Ошибка авторизации: {str(e)}')
+
 def save_config_to_env():
     """Сохранение текущей конфигурации в .env"""
     env_file = '.env'
@@ -1075,6 +1173,7 @@ class TelegramClientWrapper:
     def __init__(self):
         self.client = None
         self.running = False
+        self.qr_login = None
 
     async def start(self):
         """Запуск Telegram клиента"""
