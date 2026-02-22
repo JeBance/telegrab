@@ -22,6 +22,7 @@
 - [База данных](#-база-данных)
 - [Безопасность](#-безопасность)
 - [Production развёртывание](#-production-развёртывание)
+- [Автообновление](#-автообновление)
 - [Мониторинг и логи](#-мониторинг-и-логи)
 - [Устранение проблем](#-устранение-проблем)
 - [Структура проекта](#-структура-проекта)
@@ -44,6 +45,7 @@
 | 🤖 **UserBot режим** | Работает как обычный пользователь, не требует добавления ботов |
 | ⚡ **Очередь задач** | Фоновая обработка задач с rate limiting |
 | 📥 **Автозагрузка** | Автоматическая загрузка истории и пропущенных сообщений |
+| 🔄 **Автообновление** | Автоматическое обновление из GitHub (systemd timer + webhook) |
 
 ---
 
@@ -889,6 +891,74 @@ chmod +x /usr/local/bin/telegrab-check.sh
 # Добавление в crontab
 echo "*/5 * * * * /usr/local/bin/telegrab-check.sh" | crontab -
 ```
+
+---
+
+## 🔄 Автообновление
+
+Telegrab поддерживает автоматическое обновление из GitHub двумя способами:
+
+### Способ 1: Периодическое обновление (systemd timer)
+
+Проверка обновлений раз в сутки в 3:00 ночи:
+
+```bash
+# 1. Скопируйте скрипты
+sudo mkdir -p /opt/telegrab/scripts
+sudo cp scripts/*.sh /opt/telegrab/scripts/
+sudo cp scripts/*.service /opt/telegrab/scripts/
+sudo cp scripts/*.timer /opt/telegrab/scripts/
+sudo chmod +x /opt/telegrab/scripts/*.sh
+
+# 2. Установите systemd unit файлы
+sudo cp /opt/telegrab/scripts/telegrab-update.service /etc/systemd/system/
+sudo cp /opt/telegrab/scripts/telegrab-update.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# 3. Включите таймер
+sudo systemctl enable telegrab-update.timer
+sudo systemctl start telegrab-update.timer
+
+# 4. Проверьте статус
+sudo systemctl list-timers | grep telegrab
+```
+
+### Способ 2: Мгновенное обновление (GitHub webhook)
+
+Обновление сразу после push в репозиторий:
+
+**Настройка на GitHub:**
+1. Settings → Webhooks → Add webhook
+2. Payload URL: `http://your-server-ip:8080`
+3. Secret: придумайте секретную строку
+4. Events: Just the push event
+
+**Настройка на сервере:**
+```bash
+# 1. Отредактируйте webhook-server.sh
+sudo nano /opt/telegrab/scripts/webhook-server.sh
+# Укажите SECRET="ваш_секрет_из_github"
+
+# 2. Установите сервис
+sudo cp /opt/telegrab/scripts/telegrab-webhook.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable telegrab-webhook.service
+sudo systemctl start telegrab-webhook.service
+```
+
+### Ручное обновление
+
+```bash
+sudo /opt/telegrab/scripts/auto-update.sh
+```
+
+### Логи обновлений
+
+```bash
+journalctl -u telegrab-update.service -f
+```
+
+📚 **Подробная документация:** [scripts/README.md](scripts/README.md)
 
 ---
 

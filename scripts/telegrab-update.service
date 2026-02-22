@@ -1,0 +1,21 @@
+[Unit]
+Description=Telegrab Auto-Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/telegrab/scripts/auto-update.sh
+WorkingDirectory=/opt/telegrab
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegrab-update
+
+# Security
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/telegrab
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

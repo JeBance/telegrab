@@ -1,0 +1,17 @@
+[Unit]
+Description=Telegrab GitHub Webhook Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/telegrab
+ExecStart=/opt/telegrab/scripts/webhook-server.sh
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=telegrab-webhook
+
+[Install]
+WantedBy=multi-user.target

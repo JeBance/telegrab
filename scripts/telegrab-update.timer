@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegrab Auto-Update Timer
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Запуск каждый день в 3:00 ночи
+OnCalendar=*-*-* 03:00:00
+# Случайная задержка до 30 минут для избежания одновременных запусков
+RandomizedDelaySec=1800
+# Запустить сразу при старте таймера если прошлый запуск был давно
+Persistent=true
+# Минимальное время между запусками
+Unit=telegrab-update.service
+
+[Install]
+WantedBy=timers.target
