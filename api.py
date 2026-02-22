@@ -28,6 +28,7 @@ def load_config():
         'SESSION_STRING': '',
         'API_KEY': '',  # Новый параметр для аутентификации
         'TELEGRAM_MODE': 'production',  # test или production
+        'PROXY': '',  # Прокси для подключения
         'AUTO_LOAD_HISTORY': True,
         'AUTO_LOAD_MISSED': True,
         'MISSED_LIMIT_PER_CHAT': 500,
@@ -1006,7 +1007,14 @@ class TelegramClientWrapper:
 
         session = StringSession(session_string) if session_string else None
 
-        # Создаём клиент с указанием сервера
+        # Создаём клиент с указанием сервера и таймаутами
+        print(f"\n🔗 Подключение к Telegram...")
+        
+        # Параметры прокси
+        proxy = CONFIG.get('PROXY', '')
+        if proxy:
+            print(f"🔑 Использование прокси: {proxy}")
+        
         self.client = TelegramClient(
             session=session,
             api_id=CONFIG['API_ID'],
@@ -1018,21 +1026,57 @@ class TelegramClientWrapper:
             dc_id=self.tg_config['dc_id'],
             server_address=self.tg_config['server'],
             port=self.tg_config['port'],
+            # Таймауты для диагностики
+            connection_retries=3,
+            retry_delay=5,
+            timeout=30,
+            flood_sleep_threshold=60,
+            # Прокси
+            proxy=proxy if proxy else None,
         )
 
-        await self.client.connect()
+        try:
+            # Пробуем подключиться с таймаутом
+            await asyncio.wait_for(self.client.connect(), timeout=30)
+        except asyncio.TimeoutError:
+            print("\n❌ Таймаут подключения к Telegram!")
+            print("\nВозможные причины:")
+            print("   1. Брандмауэр блокирует подключение")
+            print("   2. Telegram заблокирован в вашей сети")
+            print("   3. Проблемы с интернет-соединением")
+            print("\nРешения:")
+            print("   • Попробуйте использовать прокси")
+            print("   • Проверьте доступность Telegram")
+            print("   • Используйте VPN")
+            return
+        except Exception as e:
+            print(f"\n❌ Ошибка подключения: {e}")
+            return
 
         if not await self.client.is_user_authorized():
             print("🔐 Требуется авторизация...")
-            await self.client.send_code_request(CONFIG['PHONE'])
-            code = input("✉️ Введите код из SMS: ")
-            await self.client.sign_in(CONFIG['PHONE'], code)
+            print(f"📱 Отправка кода на {CONFIG['PHONE']}...")
+            
+            try:
+                await self.client.send_code_request(CONFIG['PHONE'])
+                print("✅ Код отправлен! Проверьте:")
+                print("   1. Чат с @Telegram в приложении Telegram")
+                print("   2. SMS (если приложение недоступно)")
+                print("   3. Голосовой звонок через 1-2 минуты")
+                print()
+                
+                code = input("✉️  Введите код из SMS: ")
+                await self.client.sign_in(CONFIG['PHONE'], code)
 
-            new_session_string = self.client.session.save()
-            if new_session_string:
-                with open('.session', 'w') as f:
-                    f.write(new_session_string)
-                print("💾 Сессия сохранена")
+                new_session_string = self.client.session.save()
+                if new_session_string:
+                    with open('.session', 'w') as f:
+                        f.write(new_session_string)
+                    print("💾 Сессия сохранена")
+                    
+            except Exception as e:
+                print(f"❌ Ошибка авторизации: {e}")
+                return
 
         me = await self.client.get_me()
         print(f"✅ Авторизован как: {me.first_name}")
