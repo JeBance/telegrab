@@ -579,9 +579,27 @@ async def get_stats(api_key: str = Depends(get_api_key)):
 
 @app.get("/chats")
 async def get_chats(api_key: str = Depends(get_api_key)):
-    """Список чатов"""
+    """Список чатов из базы данных"""
     chats = db.get_chats()
     return {'count': len(chats), 'chats': chats}
+
+@app.get("/dialogs")
+async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 50):
+    """Получить список диалогов из Telegram"""
+    try:
+        dialogs_list = []
+        async for dialog in tg_client.client.iter_dialogs(limit=limit):
+            if dialog.is_group or dialog.is_channel:
+                dialogs_list.append({
+                    'id': dialog.id,
+                    'title': dialog.title,
+                    'type': 'group' if dialog.is_group else 'channel',
+                    'unread_count': dialog.unread_count,
+                    'last_message_date': dialog.date.isoformat() if dialog.date else None
+                })
+        return {'count': len(dialogs_list), 'dialogs': dialogs_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/messages")
 async def get_messages(

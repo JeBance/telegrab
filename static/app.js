@@ -116,47 +116,88 @@ async function loadStats() {
 // Загрузка чатов
 async function loadChats() {
     try {
-        const data = await apiRequest('/chats');
-        const tbody = document.getElementById('chatsTable');
+        // Загружаем чаты из базы данных
+        const dbData = await apiRequest('/chats');
+        // Загружаем диалоги из Telegram
+        const tgData = await apiRequest('/dialogs?limit=100');
+        
         const chatFilter = document.getElementById('messageChatFilter');
         
-        if (data.chats && data.chats.length > 0) {
-            // Обновляем фильтр чатов для сообщений
-            chatFilter.innerHTML = '<option value="">Все чаты</option>';
-            data.chats.forEach(chat => {
+        // Обновляем фильтр чатов для сообщений
+        chatFilter.innerHTML = '<option value="">Все чаты</option>';
+        
+        // Объединяем данные: сначала чаты с сообщениями, потом новые диалоги
+        const dbChatIds = new Set();
+        const rows = [];
+        
+        // Чаты из базы данных
+        if (dbData.chats && dbData.chats.length > 0) {
+            dbData.chats.forEach(chat => {
+                dbChatIds.add(chat.chat_id);
                 chatFilter.innerHTML += `<option value="${chat.chat_id}">${escapeHtml(chat.chat_title)}</option>`;
+                rows.push(`
+                    <tr class="chat-item" onclick="selectChat(${chat.chat_id})">
+                        <td>
+                            <strong>${escapeHtml(chat.chat_title)}</strong>
+                            <br><small class="text-muted">ID: ${chat.chat_id}</small>
+                        </td>
+                        <td>${chat.message_count || 0}</td>
+                        <td style="min-width: 150px;">
+                            <div class="progress" style="height: 6px;">
+                                <div class="progress-bar" style="width: ${chat.fully_loaded ? 100 : 30}%"></div>
+                            </div>
+                            <small>${chat.fully_loaded ? '✅ Загружено' : '⏳ В процессе'}</small>
+                        </td>
+                        <td>${formatDate(chat.last_message)}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); showLoadHistory(${chat.chat_id})">
+                                <i class="bi bi-download"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); loadMissed(${chat.chat_id})">
+                                <i class="bi bi-clock-history"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `);
             });
-            
-            tbody.innerHTML = data.chats.map(chat => `
-                <tr class="chat-item" onclick="selectChat(${chat.chat_id})">
-                    <td>
-                        <strong>${escapeHtml(chat.chat_title)}</strong>
-                        <br><small class="text-muted">ID: ${chat.chat_id}</small>
-                    </td>
-                    <td>${chat.message_count || 0}</td>
-                    <td style="min-width: 150px;">
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar" style="width: ${chat.fully_loaded ? 100 : 30}%"></div>
-                        </div>
-                        <small>${chat.fully_loaded ? '✅ Загружено' : '⏳ В процессе'}</small>
-                    </td>
-                    <td>${formatDate(chat.last_message)}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); showLoadHistory(${chat.chat_id})">
-                            <i class="bi bi-download"></i>
-                        </button>
-                        <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); loadMissed(${chat.chat_id})">
-                            <i class="bi bi-clock-history"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
+        }
+        
+        // Новые диалоги из Telegram (которые ещё не загружены)
+        if (tgData.dialogs && tgData.dialogs.length > 0) {
+            tgData.dialogs.forEach(dialog => {
+                if (!dbChatIds.has(dialog.id)) {
+                    chatFilter.innerHTML += `<option value="${dialog.id}">${escapeHtml(dialog.title)}</option>`;
+                    rows.push(`
+                        <tr class="chat-item" style="opacity: 0.7;">
+                            <td>
+                                <strong>${escapeHtml(dialog.title)}</strong>
+                                <br><small class="text-muted">ID: ${dialog.id} • ${dialog.type}</small>
+                            </td>
+                            <td>-</td>
+                            <td>
+                                <small class="text-muted">Не загружено</small>
+                            </td>
+                            <td>${dialog.last_message_date ? formatDate(dialog.last_message_date) : '-'}</td>
+                            <td>
+                                <button class="btn btn-sm btn-tg" onclick="event.stopPropagation(); startLoadDialog(${dialog.id})">
+                                    <i class="bi bi-download"></i> Загрузить
+                                </button>
+                            </td>
+                        </tr>
+                    `);
+                }
+            });
+        }
+        
+        const tbody = document.getElementById('chatsTable');
+        if (rows.length > 0) {
+            tbody.innerHTML = rows.join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Чатов нет</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Чатов нет. Вступите в чаты через Telegram и обновите страницу.</td></tr>';
         }
     } catch (e) {
         console.error('Failed to load chats:', e);
-        document.getElementById('chatsTable').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки</td></tr>';
+        document.getElementById('chatsTable').innerHTML = '<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки: ' + e.message + '</td></tr>';
     }
 }
 
@@ -253,6 +294,19 @@ async function joinChat() {
 function showLoadHistory(chatId) {
     document.getElementById('loadHistoryChatId').value = chatId;
     new bootstrap.Modal(document.getElementById('loadHistoryModal')).show();
+}
+
+async function startLoadDialog(chatId) {
+    // Начинаем загрузку истории для диалога
+    try {
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
+        addLog(`Загрузка начата: ${result.task_id}`, 'success');
+        refreshQueue();
+        // Обновляем список чатов через 3 секунды
+        setTimeout(loadChats, 3000);
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
 }
 
 async function confirmLoadHistory() {
