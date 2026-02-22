@@ -887,12 +887,13 @@ class TelegramClientWrapper:
             try:
                 with open('.session', 'r') as f:
                     session_string = f.read().strip()
+                    print(f"💾 Найдена сохранённая сессия")
             except:
                 pass
 
         session = StringSession(session_string) if session_string else None
 
-        # Создаём клиент — Telethon сам подключится к нужному серверу
+        # Создаём клиент
         self.client = TelegramClient(
             session=session,
             api_id=CONFIG['API_ID'],
@@ -906,9 +907,54 @@ class TelegramClientWrapper:
 
         if not await self.client.is_user_authorized():
             print("🔐 Требуется авторизация...")
-            await self.client.send_code_request(CONFIG['PHONE'])
-            code = input("✉️ Введите код из SMS: ")
-            await self.client.sign_in(CONFIG['PHONE'], code)
+            print()
+            print("Выберите способ авторизации:")
+            print("  1 — QR-код (как в десктопном Telegram)")
+            print("  2 — Код по SMS/в приложение")
+            print()
+            
+            choice = input("Ваш выбор (1 или 2): ").strip()
+            
+            if choice == '1':
+                # Авторизация через QR-код
+                print("\n📱 Сканируйте QR-код приложением Telegram:")
+                print("   Настройки → Устройства → Подключить устройство")
+                print()
+                
+                import qrcode
+                import sys
+                
+                def qr_callback(code):
+                    # Генерируем QR
+                    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+                    qr.add_data(code)
+                    qr.make(fit=True)
+                    print(qr.make_image(fill_color="black", back_color="white"))
+                    print(f"\nИли перейдите по ссылке: {code}")
+                
+                try:
+                    await self.client.sign_in(qr_callback=qr_callback)
+                except Exception as e:
+                    print(f"❌ Ошибка QR-авторизации: {e}")
+                    print("   Попробуйте способ с кодом")
+                    return
+            else:
+                # Авторизация через код
+                print("📱 Отправка кода на номер...")
+                print("   Код придёт в чат с @Telegram в приложении")
+                print()
+                
+                try:
+                    await self.client.send_code_request(CONFIG['PHONE'])
+                    code = input("✉️ Введите код из SMS: ")
+                    await self.client.sign_in(CONFIG['PHONE'], code)
+                except Exception as e:
+                    print(f"❌ Ошибка: {e}")
+                    print()
+                    print("Попробуйте:")
+                    print("  1. Завершить все сессии в Telegram (Настройки → Устройства)")
+                    print("  2. Использовать QR-код (выберите опцию 1)")
+                    return
 
             new_session_string = self.client.session.save()
             if new_session_string:
