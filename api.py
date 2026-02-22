@@ -1238,51 +1238,10 @@ class TelegramClientWrapper:
         self.qr_login = None
 
     async def start(self):
-        """Запуск Telegram клиента"""
-        if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
-            print("❌ Ошибка: задайте конфигурацию в .env")
-            return
-
-        if not await setup_telethon():
-            return
-
-        # Определяем имя файла сессии на основе API_ID и PHONE
-        session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
-
-        # Создаём клиент с SQLite сессией (надёжное хранение)
-        self.client = TelegramClient(
-            session=f"data/{session_name}",
-            api_id=CONFIG['API_ID'],
-            api_hash=CONFIG['API_HASH'],
-            device_model="Telegrab UserBot",
-            app_version="4.0.0",
-            system_version="Linux"
-        )
-
-        await self.client.connect()
-
-        if await self.client.is_user_authorized():
-            me = await self.client.get_me()
-            print(f"✅ Авторизован как: {me.first_name}")
-
-        # Запуск обработчика задач
-        asyncio.create_task(task_queue.process_tasks(self.client))
-
-        # Автозагрузка
-        if CONFIG['AUTO_LOAD_MISSED']:
-            await self.auto_load_missed()
-        if CONFIG['AUTO_LOAD_HISTORY']:
-            await self.auto_load_history()
-
-        # Обработчик новых сообщений
-        @self.client.on(events.NewMessage)
-        async def message_handler(event):
-            await self.handle_new_message(event)
-
-        self.running = True
-        
-        # Запускаем polling для поддержания соединения
-        asyncio.create_task(self.client_polling())
+        """Запуск Telegram клиента — теперь не используется при старте"""
+        # Клиент создаётся лениво в запросах API
+        print("ℹ️  Telegram клиент будет создан при первом запросе авторизации")
+        pass
 
     async def client_polling(self):
         """Polling для поддержания соединения"""
@@ -1301,11 +1260,15 @@ class TelegramClientWrapper:
         if not self.client:
             return {'connected': False, 'message': 'Клиент не инициализирован'}
         
-        if not self.client.is_connected():
-            return {'connected': False, 'message': 'Клиент отключён'}
-        
         try:
-            # Проверяем авторизацию без get_me() для избежания проблем с event loop
+            # Переподключаем для проверки статуса
+            if self.client.is_connected():
+                await self.client.disconnect()
+                await asyncio.sleep(0.3)
+            
+            await self.client.connect()
+            
+            # Проверяем авторизацию
             is_authorized = await self.client.is_user_authorized()
             if not is_authorized:
                 return {'connected': False, 'message': 'Требуется авторизация'}
