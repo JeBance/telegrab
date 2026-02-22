@@ -857,12 +857,19 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
         }
     except Exception as e:
         error_msg = str(e)
-        if 'event loop' in error_msg:
-            return {
-                'authorized': False,
-                'error': 'Требуется перезапуск сервера для авторизации',
-                'message': 'Остановите сервер и запустите снова: python telegrab.py'
-            }
+        # Если сессия уже авторизована в другом месте
+        if 'event loop' in error_msg or 'Already running' in error_msg:
+            # Проверяем может уже авторизованы
+            try:
+                if tg_client.client and await tg_client.client.is_user_authorized():
+                    me = await tg_client.client.get_me()
+                    return {
+                        'authorized': True,
+                        'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username}
+                    }
+            except:
+                pass
+        
         raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/qr_login/check")
@@ -1221,7 +1228,7 @@ class TelegramClientWrapper:
 
         # Определяем имя файла сессии на основе API_ID и PHONE
         session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
-        
+
         # Создаём клиент с SQLite сессией (надёжное хранение)
         self.client = TelegramClient(
             session=f"data/{session_name}",
@@ -1234,14 +1241,9 @@ class TelegramClientWrapper:
 
         await self.client.connect()
 
-        if not await self.client.is_user_authorized():
-            print("⚠️  Требуется авторизация. Используйте QR-код в веб-интерфейсе.")
-            print(f"🌐 Откройте: http://127.0.0.1:{CONFIG['API_PORT']}/ui")
-            # Не блокируем event loop, авторизация через UI
-            return
-        
-        me = await self.client.get_me()
-        print(f"✅ Авторизован как: {me.first_name}")
+        if await self.client.is_user_authorized():
+            me = await self.client.get_me()
+            print(f"✅ Авторизован как: {me.first_name}")
 
         # Запуск обработчика задач
         asyncio.create_task(task_queue.process_tasks(self.client))
