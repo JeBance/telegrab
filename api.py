@@ -895,8 +895,12 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
         if not tg_client.client:
             raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
         
-        if not tg_client.client.is_connected():
-            await tg_client.client.connect()
+        # Переподключаем для чтения обновлённой сессии
+        if tg_client.client.is_connected():
+            await tg_client.client.disconnect()
+            await asyncio.sleep(0.5)
+        
+        await tg_client.client.connect()
         
         if await tg_client.client.is_user_authorized():
             # Проверяем не запущены ли уже обработчики
