@@ -696,6 +696,18 @@ async function loadQrCode() {
             return;
         }
         
+        // Если ошибка с event loop
+        if (data.error) {
+            document.getElementById('qrAuthContent').innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h5>${data.error}</h5>
+                    <p>${data.message}</p>
+                </div>
+            `;
+            return;
+        }
+        
         // Генерируем QR-код используя API qrcode
         const qrCodeApi = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(data.qr_code_url)}`;
         

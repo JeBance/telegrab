@@ -821,7 +821,17 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
     """Получить QR-код для авторизации"""
     try:
         if not tg_client.client:
-            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+            # Инициализируем клиент если не создан
+            from telethon import TelegramClient
+            session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
+            tg_client.client = TelegramClient(
+                session=f"data/{session_name}",
+                api_id=CONFIG['API_ID'],
+                api_hash=CONFIG['API_HASH'],
+                device_model="Telegrab UserBot",
+                app_version="4.0.0",
+                system_version="Linux"
+            )
         
         if not tg_client.client.is_connected():
             await tg_client.client.connect()
@@ -835,7 +845,6 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
             }
         
         # Создаём QR login
-        from telethon.tl.types import auth
         qr_login = await tg_client.client.qr_login()
         
         # Сохраняем qr_login в клиенте для последующей проверки
@@ -844,10 +853,17 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
         return {
             'authorized': False,
             'qr_code_url': qr_login.url,
-            'expires_in': 30  # секунд до истечения
+            'expires_in': 30
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_msg = str(e)
+        if 'event loop' in error_msg:
+            return {
+                'authorized': False,
+                'error': 'Требуется перезапуск сервера для авторизации',
+                'message': 'Остановите сервер и запустите снова: python telegrab.py'
+            }
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/qr_login/check")
 async def check_qr_login(api_key: str = Depends(get_api_key)):
@@ -856,22 +872,41 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
         if not tg_client.client:
             raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
         
+        if not tg_client.client.is_connected():
+            await tg_client.client.connect()
+        
         if await tg_client.client.is_user_authorized():
-            me = await tg_client.client.get_me()
-            
-            # Запуск обработчика задач
-            asyncio.create_task(task_queue.process_tasks(tg_client.client))
-            
-            # Обработчик новых сообщений
-            from telethon import events
-            @tg_client.client.on(events.NewMessage)
-            async def message_handler(event):
-                await tg_client.handle_new_message(event)
-            
-            return {
-                'authorized': True,
-                'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
-            }
+            # Проверяем не запущены ли уже обработчики
+            if not tg_client.running:
+                me = await tg_client.client.get_me()
+                
+                # Запуск обработчика задач
+                asyncio.create_task(task_queue.process_tasks(tg_client.client))
+                
+                # Обработчик новых сообщений (если ещё не зарегистрирован)
+                from telethon import events
+                @tg_client.client.on(events.NewMessage)
+                async def message_handler(event):
+                    await tg_client.handle_new_message(event)
+                
+                # Автозагрузка
+                if CONFIG['AUTO_LOAD_MISSED']:
+                    asyncio.create_task(tg_client.auto_load_missed())
+                if CONFIG['AUTO_LOAD_HISTORY']:
+                    asyncio.create_task(tg_client.auto_load_history())
+                
+                tg_client.running = True
+                
+                return {
+                    'authorized': True,
+                    'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
+                }
+            else:
+                me = await tg_client.client.get_me()
+                return {
+                    'authorized': True,
+                    'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
+                }
         
         return {'authorized': False, 'message': 'Ожидание сканирования QR-кода'}
     except Exception as e:
@@ -1200,96 +1235,11 @@ class TelegramClientWrapper:
         await self.client.connect()
 
         if not await self.client.is_user_authorized():
-            print("🔐 Требуется авторизация...")
-            print()
-            print("Выберите способ авторизации:")
-            print("  1 — QR-код (как в десктопном Telegram)")
-            print("  2 — Код по SMS/в приложение")
-            print()
-            
-            choice = input("Ваш выбор (1 или 2): ").strip()
-            
-            if choice == '1':
-                # Авторизация через QR-код
-                print("\n📱 Сканируйте QR-код приложением Telegram:")
-                print("   Настройки → Устройства → Подключить устройство")
-                print()
-
-                try:
-                    import qrcode
-                    from telethon.errors import SessionPasswordNeededError
-
-                    # Используем qr_login() - правильный способ в Telethon
-                    qr_login = await self.client.qr_login()
-
-                    # Флаг успешной авторизации
-                    authorized = False
-
-                    while not authorized:
-                        # Создаём и выводим QR-код
-                        qr = qrcode.QRCode(version=1, box_size=10, border=5)
-                        qr.add_data(qr_login.url)
-                        qr.make(fit=True)
-                        qr.print_ascii(invert=True)
-
-                        print(f"\nИли перейдите по ссылке: {qr_login.url}")
-                        print("\n⏳ Ожидание сканирования... (нажмите Ctrl+C для отмены)")
-
-                        # Ждём пока пользователь отсканирует
-                        for i in range(60):  # Ждём до 60 секунд
-                            await asyncio.sleep(1)
-
-                            # Проверяем, нужна ли 2FA
-                            try:
-                                await self.client.get_me()
-                                authorized = True
-                                break
-                            except SessionPasswordNeededError:
-                                # Требуется облачный пароль
-                                print("\n🔐 Включена двухфакторная аутентификация")
-                                password = input("✉️ Введите облачный пароль: ")
-                                await self.client.sign_in(password=password)
-
-                            if await self.client.is_user_authorized():
-                                print("✅ Успешная авторизация!")
-                                authorized = True
-                                break
-
-                        # Если не авторизован, обновляем токен
-                        if not authorized:
-                            print("\n🔄 Токен устарел, обновляю...")
-                            await qr_login.recreate()
-
-                    return
-
-                except SessionPasswordNeededError:
-                    print("\n🔐 Включена двухфакторная аутентификация")
-                    password = input("✉️ Введите облачный пароль: ")
-                    await self.client.sign_in(password=password)
-                except Exception as e:
-                    print(f"❌ Ошибка QR-авторизации: {e}")
-                    print("   Попробуйте способ с кодом")
-                    return
-            else:
-                # Авторизация через код
-                print("📱 Отправка кода на номер...")
-                print("   Код придёт в чат с @Telegram в приложении")
-                print()
-                
-                try:
-                    await self.client.send_code_request(CONFIG['PHONE'])
-                    code = input("✉️ Введите код из SMS: ")
-                    await self.client.sign_in(CONFIG['PHONE'], code)
-                except Exception as e:
-                    print(f"❌ Ошибка: {e}")
-                    print()
-                    print("Попробуйте:")
-                    print("  1. Завершить все сессии в Telegram (Настройки → Устройства)")
-                    print("  2. Использовать QR-код (выберите опцию 1)")
-                    return
-
-            # После успешной авторизации сессия автоматически сохраняется в SQLite файл
-
+            print("⚠️  Требуется авторизация. Используйте QR-код в веб-интерфейсе.")
+            print(f"🌐 Откройте: http://127.0.0.1:{CONFIG['API_PORT']}/ui")
+            # Не блокируем event loop, авторизация через UI
+            return
+        
         me = await self.client.get_me()
         print(f"✅ Авторизован как: {me.first_name}")
 
@@ -1309,8 +1259,20 @@ class TelegramClientWrapper:
 
         self.running = True
         
-        # Запускаем клиент в фоне, а не блокирующе
-        asyncio.create_task(self.client.run_until_disconnected())
+        # Запускаем polling для поддержания соединения
+        asyncio.create_task(self.client_polling())
+
+    async def client_polling(self):
+        """Polling для поддержания соединения"""
+        while self.running:
+            try:
+                if self.client and self.client.is_connected():
+                    await asyncio.sleep(5)
+                else:
+                    await asyncio.sleep(1)
+            except Exception as e:
+                print(f"⚠️ Ошибка polling: {e}")
+                await asyncio.sleep(1)
 
     async def get_status(self):
         """Получение статуса Telegram клиента"""
