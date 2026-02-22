@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  telegrab:
+    build: .
+    container_name: telegrab
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+      - ./.session:/app/.session
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - telegrab-network
+
+  # Опционально: nginx для HTTPS
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: telegrab-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./ssl:/etc/nginx/ssl:ro
+  #   depends_on:
+  #     - telegrab
+  #   networks:
+  #     - telegrab-network
+
+networks:
+  telegrab-network:
+    driver: bridge
