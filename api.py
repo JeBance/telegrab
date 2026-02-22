@@ -17,6 +17,8 @@ from queue import Queue, Empty
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
 
 # ==================== КОНФИГУРАЦИЯ ====================
@@ -537,6 +539,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== СТАТИЧЕСКИЕ ФАЙЛЫ ====================
+# Монтируем директорию static для веб-интерфейса
+import os
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Главная страница - веб-интерфейс
+@app.get("/ui")
+async def ui_index():
+    """Веб-интерфейс управления"""
+    return FileResponse("static/index.html")
+
 # ==================== HTTP ENDPOINTS ====================
 @app.get("/")
 async def root():
@@ -662,6 +676,54 @@ async def load_missed_all(api_key: str = Depends(get_api_key)):
         'total_chats': len(chats)
     }
 
+@app.get("/tasks")
+async def get_tasks(api_key: str = Depends(get_api_key)):
+    """Получить список всех задач"""
+    return {
+        'tasks': list(task_queue.results.values())
+    }
+
+@app.post("/export")
+async def export_messages(api_key: str = Depends(get_api_key), limit: int = 10000):
+    """Экспорт сообщений в JSON"""
+    messages = db.get_messages(limit=limit)
+    return {
+        'exported_at': datetime.now().isoformat(),
+        'count': len(messages),
+        'messages': messages
+    }
+
+@app.post("/clear_database")
+async def clear_database(api_key: str = Depends(get_api_key)):
+    """Очистить базу данных"""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM messages')
+        cursor.execute('DELETE FROM chat_loading_status')
+        conn.commit()
+        conn.close()
+        return {'status': 'ok', 'message': 'База данных очищена'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/config")
+async def get_config(api_key: str = Depends(get_api_key)):
+    """Получить текущую конфигурацию"""
+    return {
+        'API_ID': CONFIG['API_ID'],
+        'API_HASH': CONFIG['API_HASH'][:10] + '...' if CONFIG['API_HASH'] else '',
+        'PHONE': CONFIG['PHONE'],
+        'API_PORT': CONFIG['API_PORT'],
+        'AUTO_LOAD_HISTORY': CONFIG['AUTO_LOAD_HISTORY'],
+        'AUTO_LOAD_MISSED': CONFIG['AUTO_LOAD_MISSED'],
+        'REQUESTS_PER_SECOND': CONFIG['REQUESTS_PER_SECOND'],
+        'MESSAGES_PER_REQUEST': CONFIG['MESSAGES_PER_REQUEST'],
+        'HISTORY_LIMIT_PER_CHAT': CONFIG['HISTORY_LIMIT_PER_CHAT'],
+        'MAX_CHATS_TO_LOAD': CONFIG['MAX_CHATS_TO_LOAD']
+    }
+
 # ==================== WEBSOCKET ====================
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -683,9 +745,8 @@ async def websocket_endpoint(websocket: WebSocket):
 async def setup_telethon():
     """Динамическая загрузка Telethon"""
     try:
-        global TelegramClient, events, StringSession
+        global TelegramClient, events
         from telethon import TelegramClient, events
-        from telethon.sessions import StringSession
         return True
     except ImportError:
         print("\n❌ Библиотека Telethon не установлена!")
@@ -882,20 +943,12 @@ class TelegramClientWrapper:
         if not await setup_telethon():
             return
 
-        session_string = CONFIG['SESSION_STRING']
-        if not session_string and os.path.exists('.session'):
-            try:
-                with open('.session', 'r') as f:
-                    session_string = f.read().strip()
-                    print(f"💾 Найдена сохранённая сессия")
-            except:
-                pass
-
-        session = StringSession(session_string) if session_string else None
-
-        # Создаём клиент
+        # Определяем имя файла сессии на основе API_ID и PHONE
+        session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
+        
+        # Создаём клиент с SQLite сессией (надёжное хранение)
         self.client = TelegramClient(
-            session=session,
+            session=f"data/{session_name}",
             api_id=CONFIG['API_ID'],
             api_hash=CONFIG['API_HASH'],
             device_model="Telegrab UserBot",
@@ -920,39 +973,58 @@ class TelegramClientWrapper:
                 print("\n📱 Сканируйте QR-код приложением Telegram:")
                 print("   Настройки → Устройства → Подключить устройство")
                 print()
-                
+
                 try:
-                    from telethon.tl.functions.auth import ExportLoginTokenRequest
-                    from telethon.tl.types import auth
                     import qrcode
-                    import base64
-                    
-                    # Запрашиваем токен для QR
-                    result = await self.client(ExportLoginTokenRequest())
-                    
-                    # Генерируем URL для QR
-                    token = base64.urlsafe_b64encode(result.token).decode().rstrip('=')
-                    qr_url = f"tg://login?token={token}"
-                    
-                    # Создаём и выводим QR-код
-                    qr = qrcode.QRCode(version=1, box_size=10, border=5)
-                    qr.add_data(qr_url)
-                    qr.make(fit=True)
-                    qr.print_ascii(invert=True)
-                    
-                    print(f"\nИли перейдите по ссылке: {qr_url}")
-                    print("\n⏳ Ожидание сканирования... (нажмите Ctrl+C для отмены)")
-                    
-                    # Ждём пока пользователь отсканирует
-                    for i in range(60):  # Ждём до 60 секунд
-                        await asyncio.sleep(1)
-                        if await self.client.is_user_authorized():
-                            print("✅ Успешная авторизация!")
-                            break
-                    else:
-                        print("⏰ Время вышло. Попробуйте снова.")
-                        return
-                        
+                    from telethon.errors import SessionPasswordNeededError
+
+                    # Используем qr_login() - правильный способ в Telethon
+                    qr_login = await self.client.qr_login()
+
+                    # Флаг успешной авторизации
+                    authorized = False
+
+                    while not authorized:
+                        # Создаём и выводим QR-код
+                        qr = qrcode.QRCode(version=1, box_size=10, border=5)
+                        qr.add_data(qr_login.url)
+                        qr.make(fit=True)
+                        qr.print_ascii(invert=True)
+
+                        print(f"\nИли перейдите по ссылке: {qr_login.url}")
+                        print("\n⏳ Ожидание сканирования... (нажмите Ctrl+C для отмены)")
+
+                        # Ждём пока пользователь отсканирует
+                        for i in range(60):  # Ждём до 60 секунд
+                            await asyncio.sleep(1)
+
+                            # Проверяем, нужна ли 2FA
+                            try:
+                                await self.client.get_me()
+                                authorized = True
+                                break
+                            except SessionPasswordNeededError:
+                                # Требуется облачный пароль
+                                print("\n🔐 Включена двухфакторная аутентификация")
+                                password = input("✉️ Введите облачный пароль: ")
+                                await self.client.sign_in(password=password)
+
+                            if await self.client.is_user_authorized():
+                                print("✅ Успешная авторизация!")
+                                authorized = True
+                                break
+
+                        # Если не авторизован, обновляем токен
+                        if not authorized:
+                            print("\n🔄 Токен устарел, обновляю...")
+                            await qr_login.recreate()
+
+                    return
+
+                except SessionPasswordNeededError:
+                    print("\n🔐 Включена двухфакторная аутентификация")
+                    password = input("✉️ Введите облачный пароль: ")
+                    await self.client.sign_in(password=password)
                 except Exception as e:
                     print(f"❌ Ошибка QR-авторизации: {e}")
                     print("   Попробуйте способ с кодом")
@@ -975,11 +1047,7 @@ class TelegramClientWrapper:
                     print("  2. Использовать QR-код (выберите опцию 1)")
                     return
 
-            new_session_string = self.client.session.save()
-            if new_session_string:
-                with open('.session', 'w') as f:
-                    f.write(new_session_string)
-                print("💾 Сессия сохранена")
+            # После успешной авторизации сессия автоматически сохраняется в SQLite файл
 
         me = await self.client.get_me()
         print(f"✅ Авторизован как: {me.first_name}")

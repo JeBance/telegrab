@@ -17,8 +17,9 @@ ENV/
 # Environment
 .env
 
-# Session
+# Session files
 .session
+*.session
 
 # Data
 data/
