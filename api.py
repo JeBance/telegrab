@@ -1003,14 +1003,21 @@ async def restart_telegram(api_key: str = Depends(get_api_key)):
 async def get_telegram_status(api_key: str = Depends(get_api_key)):
     """Получить статус Telegram клиента"""
     status = await tg_client.get_status()
-    
+
     # Если клиент авторизован но обработчик не запущен — запускаем
     if status.get('connected') and not tg_client.running:
         print("🔄 Автоматический запуск обработчика задач...")
         asyncio.create_task(task_queue.process_tasks(tg_client.client))
+        
+        # Регистрируем обработчик новых сообщений
+        from telethon import events
+        @tg_client.client.on(events.NewMessage)
+        async def message_handler(event):
+            await tg_client.handle_new_message(event)
+        
         tg_client.running = True
-        print("✅ Обработчик задач запущен")
-    
+        print("✅ Обработчик задач и обработчик сообщений запущены")
+
     return status
 
 @app.get("/qr_login")
@@ -1499,7 +1506,10 @@ class TelegramClientWrapper:
         """Обработка нового сообщения"""
         try:
             message = event.message
+            print(f"📩 Новое сообщение в чате {event.chat_id}: {message.text[:50]}...")
+            
             if not message.text:
+                print("⚠️  Сообщение без текста, пропускаем")
                 return
 
             chat = await message.get_chat()
@@ -1512,7 +1522,7 @@ class TelegramClientWrapper:
 
             message_date = message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date)
 
-            db.save_message(
+            saved = db.save_message(
                 message_id=message.id,
                 chat_id=chat.id,
                 chat_title=chat_title,
@@ -1520,6 +1530,7 @@ class TelegramClientWrapper:
                 sender_name=sender_name,
                 message_date=message_date
             )
+            print(f"{'✅' if saved else '⚠️'} Сообщение сохранено в БД: {message.id}")
 
             await manager.broadcast({
                 'type': 'new_message',
@@ -1532,9 +1543,10 @@ class TelegramClientWrapper:
                     'message_date': message_date
                 }
             })
+            print("📡 Отправлено уведомление WebSocket")
 
         except Exception as e:
-            print(f"⚠️ Ошибка обработки сообщения: {e}")
+            print(f"❌ Ошибка обработки сообщения: {e}")
 
     async def auto_load_missed(self):
         """Автодогрузка пропущенных"""
