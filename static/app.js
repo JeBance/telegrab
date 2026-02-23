@@ -143,16 +143,50 @@ function initWebSocket() {
 }
 
 function handleWebSocketMessage(data) {
+    console.log('📡 WebSocket сообщение:', data);
+    
     switch (data.type) {
         case 'task_completed':
+            console.log('✅ Задача завершена:', data.task);
             addLog(`Задача ${data.task.id} завершена`, 'success');
             refreshQueue();
             loadStats();
+            // Если задача была на загрузку истории — обновляем чаты
+            if (data.task.type === 'load_history' || data.task.type === 'load_missed') {
+                loadTrackedChats();
+            }
             break;
+            
         case 'new_message':
-            addLog(`Новое сообщение в ${data.chat_title}`, 'info');
+            console.log('📩 Новое сообщение:', data.message);
+            addLog(`Новое сообщение в ${data.message.chat_title}`, 'info');
+            loadStats();
+            // Обновляем таблицу сообщений если она открыта
+            if (document.getElementById('messages')?.classList.contains('active')) {
+                loadMessages();
+            }
+            // Обновляем отслеживаемые чаты
+            loadTrackedChats();
+            break;
+            
+        case 'chat_loaded':
+            console.log('📚 Чат загружен:', data);
+            addLog(`Чат "${data.chat_title}": загружено ${data.new_messages} сообщений`, 'success');
+            loadTrackedChats();
             loadStats();
             break;
+            
+        case 'missed_loaded':
+            console.log('🔍 Пропущенные загружены:', data);
+            addLog(`Загружено ${data.count} пропущенных сообщений`, 'info');
+            loadTrackedChats();
+            loadStats();
+            break;
+            
+        case 'loading_progress':
+            console.log('📊 Прогресс загрузки:', data);
+            break;
+            
         case 'pong':
             break;
     }
@@ -331,12 +365,25 @@ async function loadDialogs() {
 // Добавить чат в отслеживаемые
 async function addTrackedChat(chatId, chatTitle, chatType) {
     try {
+        console.log(`📋 Добавление чата в отслеживаемые: ${chatTitle} (${chatId})`);
+        
         await apiRequest(`/tracked_chats?chat_id=${chatId}&chat_title=${encodeURIComponent(chatTitle)}&chat_type=${chatType}`, {
             method: 'POST'
         });
         
         addLog(`Чат "${chatTitle}" добавлен в отслеживаемые`, 'success');
-        loadChats(); // Перезагружаем списки
+        
+        // Автоматически запускаем загрузку истории
+        console.log('🚀 Автоматический запуск загрузки истории...');
+        const config = await apiRequest('/config');
+        const historyLimit = config.HISTORY_LIMIT_PER_CHAT || 200;
+        
+        const loadResult = await apiRequest(`/load?chat_id=${chatId}&limit=${historyLimit}`, { method: 'POST' });
+        addLog(`Загрузка истории начата: ${loadResult.task_id} (лимит: ${historyLimit})`, 'info');
+        
+        // Перезагружаем списки
+        await loadChats();
+        refreshQueue();
     } catch (e) {
         console.error('Ошибка добавления:', e);
         alert('Ошибка добавления чата: ' + e.message);
