@@ -210,13 +210,16 @@ async function loadDialogs() {
     try {
         const tbody = document.getElementById('dialogsTable');
         tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>';
-        
-        const data = await apiRequest('/dialogs?limit=100');
-        
+
+        // Получаем параметр include_private из чекбокса
+        const includePrivate = document.getElementById('includePrivateChats')?.checked || false;
+
+        const data = await apiRequest(`/dialogs?limit=100&include_private=${includePrivate}`);
+
         // Получаем список отслеживаемых чатов для фильтрации
         const trackedData = await apiRequest('/tracked_chats');
         const trackedIds = new Set(trackedData.chats?.map(c => c.chat_id) || []);
-        
+
         if (data.dialogs && data.dialogs.length > 0) {
             tbody.innerHTML = data.dialogs.map(dialog => {
                 const isTracked = trackedIds.has(dialog.id);
@@ -227,15 +230,15 @@ async function loadDialogs() {
                             <br><small class="text-muted">ID: ${dialog.id}</small>
                         </td>
                         <td>
-                            <span class="badge ${dialog.type === 'channel' ? 'bg-info' : 'bg-success'}">
-                                ${dialog.type === 'channel' ? 'Канал' : 'Группа'}
+                            <span class="badge ${dialog.type === 'channel' ? 'bg-info' : dialog.type === 'private' ? 'bg-secondary' : 'bg-success'}">
+                                ${dialog.type === 'channel' ? 'Канал' : dialog.type === 'private' ? 'Личный' : 'Группа'}
                             </span>
                         </td>
                         <td>${dialog.unread_count || 0}</td>
                         <td>${formatDate(dialog.last_message_date)}</td>
                         <td>
-                            ${isTracked ? 
-                                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Отслеживается</span>' : 
+                            ${isTracked ?
+                                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Отслеживается</span>' :
                                 `<button class="btn btn-sm btn-tg" onclick="addTrackedChat(${dialog.id}, '${escapeHtml(dialog.title).replace(/'/g, "\\'")}', '${dialog.type}')">
                                     <i class="bi bi-plus-circle"></i> Добавить
                                 </button>`
@@ -295,6 +298,18 @@ async function loadChatHistory(chatId) {
         refreshQueue();
     } catch (e) {
         console.error('❌ Ошибка загрузки:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Запуск обработчика задач
+async function startWorker() {
+    try {
+        const result = await apiRequest('/start_worker', { method: 'POST' });
+        addLog(result.message, 'success');
+        refreshQueue();
+    } catch (e) {
+        console.error('Ошибка запуска:', e);
         alert('Ошибка: ' + e.message);
     }
 }
