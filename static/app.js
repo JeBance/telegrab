@@ -206,33 +206,57 @@ function handleWebSocketMessage(data) {
     }
 }
 
-// API запросы
+// API запросы с retry
 async function apiRequest(endpoint, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers
     };
-    
+
     if (apiKey) {
         headers['X-API-Key'] = apiKey;
     }
+
+    // Retry logic: 3 попытки с задержкой
+    const maxRetries = 3;
+    let lastError = null;
     
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-        ...options,
-        headers
-    });
-    
-    if (response.status === 401) {
-        const newKey = prompt('Требуется API ключ. Введите ваш API ключ:');
-        if (newKey) {
-            apiKey = newKey;
-            localStorage.setItem('telegrab_api_key', newKey);
-            return apiRequest(endpoint, options);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            const response = await fetch(`${API_BASE}${endpoint}`, {
+                ...options,
+                headers
+            });
+
+            if (response.status === 401) {
+                const newKey = prompt('Требуется API ключ. Введите ваш API ключ:');
+                if (newKey) {
+                    apiKey = newKey;
+                    localStorage.setItem('telegrab_api_key', newKey);
+                    return apiRequest(endpoint, options);
+                }
+                throw new Error('Authentication required');
+            }
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+                throw new Error(errorData.detail || `HTTP ${response.status}`);
+            }
+
+            return await response.json();
+            
+        } catch (e) {
+            lastError = e;
+            console.warn(`⚠️  Попытка ${attempt} не удалась: ${e.message}`);
+            
+            if (attempt < maxRetries) {
+                // Ждём перед следующей попыткой
+                await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+            }
         }
-        throw new Error('Authentication required');
     }
     
-    return response.json();
+    throw lastError;
 }
 
 // Загрузка статистики
@@ -321,7 +345,20 @@ async function loadChats() {
         
     } catch (e) {
         console.error('❌ Ошибка загрузки чатов:', e);
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+        
+        // Показываем более понятную ошибку
+        let errorMsg = e.message;
+        if (errorMsg.includes('Unexpected token') || errorMsg.includes('Internal Server Error')) {
+            errorMsg = 'Сервер ещё не готов. Обновите страницу через несколько секунд.';
+        }
+        
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">
+            <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(errorMsg)}
+            <br><small>Если проблема сохраняется — проверьте что сервер запущен</small>
+            <br><button class="btn btn-sm btn-tg mt-2" onclick="loadChats()">
+                <i class="bi bi-arrow-clockwise"></i> Попробовать снова
+            </button>
+        </td></tr>`;
     }
 }
 
