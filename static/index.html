@@ -103,9 +103,10 @@
             color: #e4e6eb !important;
             font-size: 0.875rem !important;
             vertical-align: top !important;
+            background-color: transparent !important;
         }
         .table td small, .table th small {
-            color: #8b949e !important;
+            color: #a0aec0 !important;
             font-size: 0.75rem !important;
         }
         /* Таблица сообщений - компактный стиль */
@@ -119,13 +120,24 @@
         #messagesTable td {
             padding: 8px 12px !important;
         }
+        /* Таблица чатов - стили */
+        #chatsTable td, #chatsTable th {
+            color: #e4e6eb !important;
+            background-color: rgba(36, 47, 61, 0.5) !important;
+        }
+        #chatsTable td strong {
+            color: #ffffff !important;
+        }
+        #chatsTable td small {
+            color: #8b949e !important;
+        }
         /* Выделенные строки (отслеживаемые чаты) */
         .table-success, .table-success td, .table-success th {
             background: rgba(42, 171, 238, 0.2) !important;
             color: #e4e6eb !important;
         }
         .table-success td strong, .table-success th strong {
-            color: #e4e6eb !important;
+            color: #ffffff !important;
         }
         .table-success td small, .table-success th small {
             color: #8b949e !important;
