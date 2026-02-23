@@ -1247,7 +1247,28 @@ async def join_chat(client, chat_identifier):
 async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=None):
     """Загрузка истории с дозированием запросов"""
     try:
-        chat = await client.get_entity(chat_id)
+        # Пробуем получить чат разными способами
+        chat = None
+        chat_id_str = str(chat_id)
+        
+        # Если это username (начинается с @)
+        if chat_id_str.startswith('@'):
+            chat = await client.get_entity(chat_id_str)
+        else:
+            # Пробуем получить по ID
+            try:
+                # Для супергрупп и каналов ID может быть с -100
+                if chat_id_str.startswith('-100'):
+                    chat = await client.get_entity(int(chat_id_str))
+                else:
+                    chat = await client.get_entity(int(chat_id_str))
+            except (ValueError, TypeError):
+                # Если не числовой ID — пробуем как строку
+                chat = await client.get_entity(chat_id_str)
+        
+        if not chat:
+            raise Exception(f"Чат не найден: {chat_id}")
+        
         chat_title = getattr(chat, 'title', '') or getattr(chat, 'username', f"chat_{chat_id}")
 
         status = db.get_loading_status(chat_id)
