@@ -375,14 +375,12 @@ async function loadMessages() {
             console.log(`✅ Загружено ${data.messages.length} сообщений (страница ${messagePage + 1})`);
             tbody.innerHTML = data.messages.map(msg => `
                 <tr>
-                    <td>${escapeHtml(msg.chat_title || 'Unknown')}</td>
-                    <td style="max-width: 400px;">
-                        <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                            ${escapeHtml(msg.text || '(без текста)')}
-                        </div>
+                    <td style="white-space: nowrap;">${escapeHtml(msg.chat_title || 'Unknown')}</td>
+                    <td style="max-width: 600px; white-space: normal; word-wrap: break-word;">
+                        ${escapeHtml(msg.text || '(без текста)')}
                     </td>
-                    <td>${escapeHtml(msg.sender_name || 'Unknown')}</td>
-                    <td>${formatDate(msg.message_date)}</td>
+                    <td style="white-space: nowrap;">${escapeHtml(msg.sender_name || 'Unknown')}</td>
+                    <td style="white-space: nowrap;">${formatDate(msg.message_date)}</td>
                 </tr>
             `).join('');
             
