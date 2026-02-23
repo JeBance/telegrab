@@ -129,7 +129,7 @@ class Database:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER UNIQUE,
+                message_id INTEGER,
                 chat_id INTEGER,
                 chat_title TEXT,
                 text TEXT,
@@ -137,6 +137,13 @@ class Database:
                 message_date TEXT,
                 saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
+        ''')
+
+        # КОМБИНИРОВАННЫЙ UNIQUE индекс (chat_id + message_id)
+        # Позволяет сохранять сообщения с одинаковыми message_id из разных чатов
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_message_unique 
+            ON messages(chat_id, message_id)
         ''')
 
         cursor.execute('''
