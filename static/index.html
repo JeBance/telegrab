@@ -30,31 +30,35 @@
             background: var(--tg-card);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px;
-            color: #e4e6eb !important;
-        }
-        .card * {
-            color: #e4e6eb !important;
+            color: #e4e6eb;
         }
         .card-header {
             background: rgba(255,255,255,0.05);
             border-bottom: 1px solid rgba(255,255,255,0.1);
             font-weight: 600;
-            color: #e4e6eb !important;
-        }
-        .card-header * {
-            color: #e4e6eb !important;
+            color: #e4e6eb;
         }
         .card-body {
-            color: #e4e6eb !important;
-        }
-        .card-body * {
-            color: #e4e6eb !important;
+            color: #e4e6eb;
         }
         .card-title {
-            color: #e4e6eb !important;
+            color: #e4e6eb;
         }
         .stat-card {
             transition: transform 0.2s;
+        }
+        .stat-card h6 {
+            color: #8b949e !important;
+        }
+        .stat-card h3 {
+            color: #e4e6eb !important;
+        }
+        /* Quick stats в sidebar */
+        #quickStats span:first-child {
+            color: #8b949e !important;
+        }
+        #quickStats strong {
+            color: #e4e6eb !important;
         }
         .stat-card:hover {
             transform: translateY(-5px);
@@ -87,28 +91,9 @@
             color: #e4e6eb !important;
         }
         .table td small, .table th small {
-            color: #a0aec0 !important;
-        }
-        .text-muted {
-            color: #a0aec0 !important;
-        }
-        /* Переопределяем Bootstrap text-muted для тёмной темы */
-        .text-muted, small, .small {
-            color: #a0aec0 !important;
-        }
-        /* Заголовки в статистике */
-        .stat-card h6 {
             color: #8b949e !important;
         }
-        /* Счётчики и цифры */
-        .stat-card h3 {
-            color: #e4e6eb !important;
-        }
-        /* Текст в таблицах */
-        .table td, .table th {
-            color: #e4e6eb !important;
-        }
-        .table td small, .table th small {
+        .text-muted {
             color: #8b949e !important;
         }
         /* Текст в формах */
