@@ -1316,13 +1316,23 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         last_loaded_id = status.get('last_loaded_id', 0)
         total_loaded = status.get('total_loaded', 0)
 
-        # Получаем дату последнего сообщения для offset_date
-        last_message_date = db.get_last_message_date_in_chat(chat_id)
+        # Получаем MAX(message_id) из БД для этого чата
+        # Это нужно чтобы начать загрузку с правильного места
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT MAX(message_id) FROM messages WHERE chat_id = ?', (chat_id,))
+        result = cursor.fetchone()[0]
+        conn.close()
+        if result:
+            last_loaded_id = result
+            print(f"📊 MAX(message_id) в БД: {last_loaded_id}")
 
         if status.get('fully_loaded', 0) == 1 and limit == 0:
             return {'chat_id': chat_id, 'chat_title': chat_title, 'already_loaded': True}
 
         message_count = 0
+        last_message_date = None
         has_more_messages = True
 
         while has_more_messages:
