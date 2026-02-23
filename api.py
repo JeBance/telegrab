@@ -683,10 +683,26 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):
     """Получить список диалогов из Telegram"""
     try:
         if not tg_client.client:
-            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+            # Создаём клиент если не существует
+            from telethon import TelegramClient
+            session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
+            tg_client.client = TelegramClient(
+                session=f"data/{session_name}",
+                api_id=CONFIG['API_ID'],
+                api_hash=CONFIG['API_HASH'],
+                device_model="Telegrab UserBot",
+                app_version="4.0.0",
+                system_version="Linux"
+            )
         
+        # Переподключаем если не подключён
         if not tg_client.client.is_connected():
-            raise HTTPException(status_code=503, detail="Telegram клиент не подключён")
+            print("🔌 Подключение к Telegram...")
+            await tg_client.client.connect()
+        
+        # Проверяем авторизацию
+        if not await tg_client.client.is_user_authorized():
+            raise HTTPException(status_code=401, detail="Требуется авторизация в Telegram")
         
         print(f"📞 Получение диалогов (limit={limit})...")
         dialogs_list = []
