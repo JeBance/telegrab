@@ -89,9 +89,23 @@
         }
         .table td, .table th {
             color: #e4e6eb !important;
+            font-size: 0.875rem !important;
+            vertical-align: top !important;
         }
         .table td small, .table th small {
             color: #8b949e !important;
+            font-size: 0.75rem !important;
+        }
+        /* Таблица сообщений - компактный стиль */
+        #messagesTable td:nth-child(2) {
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            word-break: break-word !important;
+            max-width: 600px !important;
+            line-height: 1.4 !important;
+        }
+        #messagesTable td {
+            padding: 8px 12px !important;
         }
         /* Выделенные строки (отслеживаемые чаты) */
         .table-success, .table-success td, .table-success th {
