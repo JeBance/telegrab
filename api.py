@@ -1334,7 +1334,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 sender = await message.get_sender()
                 sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', 'Unknown')
 
-                db.save_message(
+                saved = db.save_message(
                     message_id=message.id,
                     chat_id=chat_id,
                     chat_title=chat_title,
@@ -1343,10 +1343,12 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                     message_date=message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date)
                 )
 
-                message_count += 1
-                total_loaded += 1
-                last_message_date = message.date.isoformat()
-                last_loaded_id = message.id
+                # Увеличиваем счётчики только если сообщение сохранено
+                if saved:
+                    message_count += 1
+                    total_loaded += 1
+                    last_message_date = message.date.isoformat()
+                    last_loaded_id = message.id
 
             if message_count % 100 == 0:
                 db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
