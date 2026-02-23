@@ -152,6 +152,16 @@ class Database:
             )
         ''')
 
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS tracked_chats (
+                chat_id INTEGER PRIMARY KEY,
+                chat_title TEXT,
+                chat_type TEXT,
+                enabled BOOLEAN DEFAULT 1,
+                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat ON messages(chat_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_date ON messages(message_date)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_saved_at ON messages(saved_at)')
@@ -329,6 +339,66 @@ class Database:
         except Exception as e:
             print(f"❌ Ошибка получения чатов: {e}")
             return []
+
+    def get_tracked_chats(self):
+        """Получить список отслеживаемых чатов"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                SELECT t.chat_id, t.chat_title, t.chat_type, t.enabled, t.added_at,
+                       COALESCE(s.total_loaded, 0) as total_loaded,
+                       COALESCE(s.fully_loaded, 0) as fully_loaded
+                FROM tracked_chats t
+                LEFT JOIN chat_loading_status s ON t.chat_id = s.chat_id
+                ORDER BY t.added_at DESC
+            ''')
+
+            results = [dict(row) for row in cursor.fetchall()]
+            conn.close()
+            return results
+        except Exception as e:
+            print(f"❌ Ошибка получения отслеживаемых чатов: {e}")
+            return []
+
+    def add_tracked_chat(self, chat_id, chat_title, chat_type):
+        """Добавить чат в список отслеживаемых"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('''
+                INSERT OR REPLACE INTO tracked_chats
+                (chat_id, chat_title, chat_type, enabled, added_at)
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+            ''', (chat_id, chat_title, chat_type))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка добавления отслеживаемого чата: {e}")
+            return False
+
+    def remove_tracked_chat(self, chat_id):
+        """Удалить чат из списка отслеживаемых"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            cursor.execute('DELETE FROM tracked_chats WHERE chat_id = ?', (chat_id,))
+
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            print(f"❌ Ошибка удаления отслеживаемого чата: {e}")
+            return False
 
     def get_stats(self):
         """Получение статистики"""
@@ -589,6 +659,24 @@ async def get_chats(api_key: str = Depends(get_api_key)):
     """Список чатов из базы данных"""
     chats = db.get_chats()
     return {'count': len(chats), 'chats': chats}
+
+@app.get("/tracked_chats")
+async def get_tracked_chats(api_key: str = Depends(get_api_key)):
+    """Получить список отслеживаемых чатов"""
+    chats = db.get_tracked_chats()
+    return {'count': len(chats), 'chats': chats}
+
+@app.post("/tracked_chats")
+async def add_tracked_chat(chat_id: int, chat_title: str, chat_type: str, api_key: str = Depends(get_api_key)):
+    """Добавить чат в список отслеживаемых"""
+    result = db.add_tracked_chat(chat_id, chat_title, chat_type)
+    return {'status': 'ok', 'added': result}
+
+@app.delete("/tracked_chats/{chat_id}")
+async def remove_tracked_chat(chat_id: int, api_key: str = Depends(get_api_key)):
+    """Удалить чат из списка отслеживаемых"""
+    result = db.remove_tracked_chat(chat_id)
+    return {'status': 'ok', 'removed': result}
 
 @app.get("/dialogs")
 async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):

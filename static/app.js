@@ -160,101 +160,139 @@ async function loadStats() {
 
 // Загрузка чатов
 async function loadChats() {
+    await loadTrackedChats();
+    await loadDialogs();
+}
+
+// Загрузка отслеживаемых чатов
+async function loadTrackedChats() {
     try {
-        console.log('🔄 Загрузка чатов...');
-
-        // Загружаем чаты из базы данных
-        const dbData = await apiRequest('/chats');
-        console.log('📦 Чаты из БД:', dbData);
-
-        // Загружаем диалоги из Telegram (может быть ошибка если клиент не подключён)
-        let tgData = { dialogs: [] };
-        try {
-            tgData = await apiRequest('/dialogs?limit=100');
-            console.log('📞 Диалоги из Telegram:', tgData);
-        } catch (e) {
-            console.warn('⚠️ Не удалось загрузить диалоги из Telegram:', e.message);
-        }
-
-        const chatFilter = document.getElementById('messageChatFilter');
-
-        // Обновляем фильтр чатов для сообщений
-        chatFilter.innerHTML = '<option value="">Все чаты</option>';
-
-        // Объединяем данные: сначала чаты с сообщениями, потом новые диалоги
-        const dbChatIds = new Set();
-        const rows = [];
-
-        // Чаты из базы данных
-        if (dbData.chats && dbData.chats.length > 0) {
-            dbData.chats.forEach(chat => {
-                dbChatIds.add(chat.chat_id);
-                chatFilter.innerHTML += `<option value="${chat.chat_id}">${escapeHtml(chat.chat_title)}</option>`;
-                rows.push(`
-                    <tr class="chat-item" onclick="selectChat(${chat.chat_id})">
-                        <td>
-                            <strong>${escapeHtml(chat.chat_title)}</strong>
-                            <br><small class="text-muted">ID: ${chat.chat_id}</small>
-                        </td>
-                        <td>${chat.message_count || 0}</td>
-                        <td style="min-width: 150px;">
-                            <div class="progress" style="height: 6px;">
-                                <div class="progress-bar" style="width: ${chat.fully_loaded ? 100 : 30}%"></div>
-                            </div>
-                            <small>${chat.fully_loaded ? '✅ Загружено' : '⏳ В процессе'}</small>
-                        </td>
-                        <td>${formatDate(chat.last_message)}</td>
-                        <td>
-                            <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); showLoadHistory(${chat.chat_id})">
-                                <i class="bi bi-download"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-light" onclick="event.stopPropagation(); loadMissed(${chat.chat_id})">
-                                <i class="bi bi-clock-history"></i>
-                            </button>
-                        </td>
-                    </tr>
-                `);
-            });
-        }
+        const data = await apiRequest('/tracked_chats');
+        const tbody = document.getElementById('trackedChatsTable');
         
-        // Новые диалоги из Telegram (которые ещё не загружены)
-        if (tgData.dialogs && tgData.dialogs.length > 0) {
-            tgData.dialogs.forEach(dialog => {
-                if (!dbChatIds.has(dialog.id)) {
-                    chatFilter.innerHTML += `<option value="${dialog.id}">${escapeHtml(dialog.title)}</option>`;
-                    rows.push(`
-                        <tr class="chat-item" style="opacity: 0.7;">
-                            <td>
-                                <strong>${escapeHtml(dialog.title)}</strong>
-                                <br><small class="text-muted">ID: ${dialog.id} • ${dialog.type}</small>
-                            </td>
-                            <td>-</td>
-                            <td>
-                                <small class="text-muted">Не загружено</small>
-                            </td>
-                            <td>${dialog.last_message_date ? formatDate(dialog.last_message_date) : '-'}</td>
-                            <td>
-                                <button class="btn btn-sm btn-tg" onclick="event.stopPropagation(); startLoadDialog(${dialog.id})">
-                                    <i class="bi bi-download"></i> Загрузить
-                                </button>
-                            </td>
-                        </tr>
-                    `);
-                }
-            });
-        }
-        
-        const tbody = document.getElementById('chatsTable');
-        console.log('📊 Всего строк:', rows.length);
-        
-        if (rows.length > 0) {
-            tbody.innerHTML = rows.join('');
+        if (data.chats && data.chats.length > 0) {
+            tbody.innerHTML = data.chats.map(chat => `
+                <tr>
+                    <td>
+                        <strong>${escapeHtml(chat.chat_title)}</strong>
+                        <br><small class="text-muted">ID: ${chat.chat_id}</small>
+                    </td>
+                    <td>
+                        <span class="badge ${chat.chat_type === 'channel' ? 'bg-info' : 'bg-success'}">
+                            ${chat.chat_type === 'channel' ? 'Канал' : 'Группа'}
+                        </span>
+                    </td>
+                    <td>${chat.total_loaded || 0}</td>
+                    <td>
+                        ${chat.fully_loaded ? '<span class="badge bg-success">Загружено</span>' : '<span class="badge bg-warning">В процессе</span>'}
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-light" onclick="loadChatHistory(${chat.chat_id})">
+                            <i class="bi bi-download"></i> Загрузить
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeTrackedChat(${chat.chat_id})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Чатов нет. Вступите в чаты через Telegram и обновите страницу.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет отслеживаемых чатов. Добавьте чаты из списка ниже.</td></tr>';
         }
     } catch (e) {
-        console.error('❌ Ошибка загрузки чатов:', e);
-        document.getElementById('chatsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка загрузки: ${e.message}<br><small>Проверьте консоль (F12) для деталей</small></td></tr>`;
+        console.error('❌ Ошибка загрузки отслеживаемых чатов:', e);
+        document.getElementById('trackedChatsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+    }
+}
+
+// Загрузка диалогов из Telegram
+async function loadDialogs() {
+    try {
+        const tbody = document.getElementById('dialogsTable');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>';
+        
+        const data = await apiRequest('/dialogs?limit=100');
+        
+        // Получаем список отслеживаемых чатов для фильтрации
+        const trackedData = await apiRequest('/tracked_chats');
+        const trackedIds = new Set(trackedData.chats?.map(c => c.chat_id) || []);
+        
+        if (data.dialogs && data.dialogs.length > 0) {
+            tbody.innerHTML = data.dialogs.map(dialog => {
+                const isTracked = trackedIds.has(dialog.id);
+                return `
+                    <tr class="${isTracked ? 'table-success' : ''}">
+                        <td>
+                            <strong>${escapeHtml(dialog.title)}</strong>
+                            <br><small class="text-muted">ID: ${dialog.id}</small>
+                        </td>
+                        <td>
+                            <span class="badge ${dialog.type === 'channel' ? 'bg-info' : 'bg-success'}">
+                                ${dialog.type === 'channel' ? 'Канал' : 'Группа'}
+                            </span>
+                        </td>
+                        <td>${dialog.unread_count || 0}</td>
+                        <td>${formatDate(dialog.last_message_date)}</td>
+                        <td>
+                            ${isTracked ? 
+                                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Отслеживается</span>' : 
+                                `<button class="btn btn-sm btn-tg" onclick="addTrackedChat(${dialog.id}, '${escapeHtml(dialog.title).replace(/'/g, "\\'")}', '${dialog.type}')">
+                                    <i class="bi bi-plus-circle"></i> Добавить
+                                </button>`
+                            }
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет диалогов</td></tr>';
+        }
+    } catch (e) {
+        console.error('❌ Ошибка загрузки диалогов:', e);
+        document.getElementById('dialogsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+    }
+}
+
+// Добавить чат в отслеживаемые
+async function addTrackedChat(chatId, chatTitle, chatType) {
+    try {
+        await apiRequest(`/tracked_chats?chat_id=${chatId}&chat_title=${encodeURIComponent(chatTitle)}&chat_type=${chatType}`, {
+            method: 'POST'
+        });
+        
+        addLog(`Чат "${chatTitle}" добавлен в отслеживаемые`, 'success');
+        loadChats(); // Перезагружаем списки
+    } catch (e) {
+        console.error('Ошибка добавления:', e);
+        alert('Ошибка добавления чата: ' + e.message);
+    }
+}
+
+// Удалить чат из отслеживаемых
+async function removeTrackedChat(chatId) {
+    if (!confirm('Удалить чат из списка отслеживаемых? История сообщений сохранится в базе.')) return;
+    
+    try {
+        await apiRequest(`/tracked_chats/${chatId}`, {
+            method: 'DELETE'
+        });
+        
+        addLog('Чат удалён из отслеживаемых', 'info');
+        loadChats(); // Перезагружаем списки
+    } catch (e) {
+        console.error('Ошибка удаления:', e);
+        alert('Ошибка удаления чата: ' + e.message);
+    }
+}
+
+// Загрузка истории чата
+async function loadChatHistory(chatId) {
+    try {
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
+        addLog(`Загрузка истории начата: ${result.task_id}`, 'info');
+        refreshQueue();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
     }
 }
 
