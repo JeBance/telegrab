@@ -12,7 +12,6 @@ import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
-from queue import Queue, Empty
 
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
@@ -478,13 +477,13 @@ class TaskQueue:
     """Очередь задач для дозированной загрузки"""
 
     def __init__(self):
-        self.queue = Queue()
+        self.queue = asyncio.Queue()
         self.results = {}
         self.processing = False
         self.last_request_time = 0
         self.request_interval = 1.0 / max(CONFIG['REQUESTS_PER_SECOND'], 0.1)
 
-    def add_task(self, task_id, task_type, **kwargs):
+    async def add_task(self, task_id, task_type, **kwargs):
         """Добавить задачу в очередь"""
         task = {
             'id': task_id,
@@ -493,7 +492,7 @@ class TaskQueue:
             'status': 'pending',
             'created_at': datetime.now().isoformat()
         }
-        self.queue.put(task)
+        await self.queue.put(task)
         self.results[task_id] = task
         return task_id
 
@@ -508,7 +507,7 @@ class TaskQueue:
 
         while self.processing:
             try:
-                task = self.queue.get(timeout=1)
+                task = await asyncio.wait_for(self.queue.get(), timeout=1.0)
                 print(f"📦 Получена задача {task['id']}: {task['type']}")
 
                 current_time = time.time()
@@ -546,8 +545,9 @@ class TaskQueue:
                     print(f"❌ Ошибка выполнения задачи {task['id']}: {e}")
 
                 self.last_request_time = time.time()
+                self.queue.task_done()
 
-            except Empty:
+            except asyncio.TimeoutError:
                 continue
             except Exception as e:
                 print(f"❌ Ошибка обработчика задач: {e}")
@@ -817,7 +817,7 @@ async def load_chat(api_key: str = Depends(get_api_key), chat_id: str = None, li
     if limit > 0:
         task_data['limit'] = limit
 
-    task_queue.add_task(task_id=task_id, task_type=task_type, **task_data)
+    await task_queue.add_task(task_id=task_id, task_type=task_type, **task_data)
 
     return {
         'task_id': task_id,
@@ -857,7 +857,7 @@ async def load_missed_all(api_key: str = Depends(get_api_key)):
 
     for chat in chats[:10]:
         task_id = str(uuid.uuid4())[:8]
-        task_queue.add_task(task_id=task_id, task_type='load_missed', chat_id=chat['chat_id'])
+        await task_queue.add_task(task_id=task_id, task_type='load_missed', chat_id=chat['chat_id'])
         task_ids.append(task_id)
 
     return {
