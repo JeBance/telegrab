@@ -356,6 +356,11 @@ async function loadMessages() {
     console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
 
     try {
+        // Сначала получаем общее количество
+        const statsUrl = `/stats`;
+        const stats = await apiRequest(statsUrl);
+        const totalMessages = stats.total_messages || 0;
+        
         let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
         if (chatId) url += `&chat_id=${chatId}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -367,7 +372,7 @@ async function loadMessages() {
         const tbody = document.getElementById('messagesTable');
 
         if (data.messages && data.messages.length > 0) {
-            console.log(`✅ Загружено ${data.messages.length} сообщений`);
+            console.log(`✅ Загружено ${data.messages.length} сообщений (страница ${messagePage + 1})`);
             tbody.innerHTML = data.messages.map(msg => `
                 <tr>
                     <td>${escapeHtml(msg.chat_title || 'Unknown')}</td>
@@ -380,16 +385,78 @@ async function loadMessages() {
                     <td>${formatDate(msg.message_date)}</td>
                 </tr>
             `).join('');
-            document.getElementById('messagesCount').textContent = `${data.count} сообщений`;
+            
+            // Обновляем счётчик
+            const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
+            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages} (всего: ${totalMessages} сообщений)`;
+            
+            // Обновляем пагинацию
+            updatePagination(totalPages);
         } else {
             console.log('⚠️  Нет сообщений');
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
+            document.getElementById('messagesCount').textContent = '0 сообщений';
+            document.getElementById('messagesPagination').innerHTML = '';
         }
     } catch (e) {
         console.error('❌ Ошибка загрузки сообщений:', e);
         console.error('Stack:', e.stack);
         document.getElementById('messagesTable').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
     }
+}
+
+// Обновление пагинации
+function updatePagination(totalPages) {
+    const pagination = document.getElementById('messagesPagination');
+    if (totalPages <= 1) {
+        pagination.innerHTML = '';
+        return;
+    }
+    
+    let html = '';
+    
+    // Кнопка "Назад"
+    html += `<li class="page-item ${messagePage === 0 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="prevPage(); return false;">
+            <i class="bi bi-chevron-left"></i>
+        </a>
+    </li>`;
+    
+    // Номера страниц
+    for (let i = Math.max(0, messagePage - 2); i <= Math.min(totalPages - 1, messagePage + 2); i++) {
+        html += `<li class="page-item ${i === messagePage ? 'active' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i + 1}</a>
+        </li>`;
+    }
+    
+    // Кнопка "Вперёд"
+    html += `<li class="page-item ${messagePage >= totalPages - 1 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="nextPage(); return false;">
+            <i class="bi bi-chevron-right"></i>
+        </a>
+    </li>`;
+    
+    pagination.innerHTML = html;
+}
+
+// Переход на страницу
+function goToPage(page) {
+    messagePage = page;
+    loadMessages();
+}
+
+// Предыдущая страница
+function prevPage() {
+    if (messagePage > 0) {
+        messagePage--;
+        loadMessages();
+    }
+}
+
+// Следующая страница
+function nextPage() {
+    messagePage++;
+    loadMessages();
 }
 
 // Загрузка настроек
