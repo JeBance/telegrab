@@ -981,6 +981,14 @@ async def restart_telegram(api_key: str = Depends(get_api_key)):
 async def get_telegram_status(api_key: str = Depends(get_api_key)):
     """Получить статус Telegram клиента"""
     status = await tg_client.get_status()
+    
+    # Если клиент авторизован но обработчик не запущен — запускаем
+    if status.get('connected') and not tg_client.running:
+        print("🔄 Автоматический запуск обработчика задач...")
+        asyncio.create_task(task_queue.process_tasks(tg_client.client))
+        tg_client.running = True
+        print("✅ Обработчик задач запущен")
+    
     return status
 
 @app.get("/qr_login")

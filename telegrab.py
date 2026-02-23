@@ -274,6 +274,14 @@ def main():
         print("\n🤖 Запуск Telegram UserBot...")
         try:
             await tg_client.start()
+            
+            # Если клиент авторизован — запускаем обработчик задач
+            if tg_client.client and await tg_client.client.is_user_authorized():
+                print("\n✅ Клиент авторизован, запуск обработчика задач...")
+                from api import task_queue
+                asyncio.create_task(task_queue.process_tasks(tg_client.client))
+                tg_client.running = True
+                print("🔄 Обработчик задач запущен")
         except Exception as e:
             print(f"❌ Ошибка Telegram клиента: {e}")
             task_queue.stop()
