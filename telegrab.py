@@ -248,30 +248,44 @@ def main():
 
     print("\n" + "="*60)
 
-async def run_all():
-    import uvicorn
-    from api import app, task_queue, tg_client
+    async def run_all():
+        import uvicorn
+        from api import app, task_queue
 
-    print("🚀 Запуск Telegrab...")
-    
-    # Сначала запускаем Telegram клиента
-    print("\n🤖 Запуск Telegram UserBot...")
-    try:
-        await tg_client.start()
-    except Exception as e:
-        print(f"❌ Ошибка Telegram клиента: {e}")
-    
-    # Затем запускаем API сервер (блокирующе)
-    print("\n🌐 Запуск API сервера...")
-    await uvicorn.Server(
-        config=uvicorn.Config(
-            app,
-            host="0.0.0.0",
-            port=CONFIG['API_PORT'],
-            log_level="warning",
-            loop="asyncio"
-        )
-    ).serve()
+        # Запуск API сервера в отдельном потоке
+        async def run_uvicorn():
+            try:
+                await asyncio.to_thread(
+                    uvicorn.run,
+                    app,
+                    host="0.0.0.0",
+                    port=CONFIG['API_PORT'],
+                    log_level="warning"
+                )
+            except Exception as e:
+                print(f"❌ Ошибка API сервера: {e}")
+
+        api_task = asyncio.create_task(run_uvicorn())
+
+        # Ждём пока API сервер запустится
+        await asyncio.sleep(2)
+        print("✅ API сервер запущен")
+
+        print("\n🤖 Запуск Telegram UserBot...")
+        try:
+            await tg_client.start()
+            
+            # Если клиент авторизован — запускаем обработчик задач
+            if tg_client.client and await tg_client.client.is_user_authorized():
+                print("\n✅ Клиент авторизован, запуск обработчика задач...")
+                from api import task_queue
+                asyncio.create_task(task_queue.process_tasks(tg_client.client))
+                tg_client.running = True
+                print("🔄 Обработчик задач запущен")
+        except Exception as e:
+            print(f"❌ Ошибка Telegram клиента: {e}")
+            task_queue.stop()
+            raise
 
     try:
         asyncio.run(run_all())
