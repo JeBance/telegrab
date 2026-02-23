@@ -9,6 +9,7 @@ let qrCheckInterval = null;
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🚀 Telegrab UI загружен');
     checkAuthStatus();
     initWebSocket();
     setInterval(refreshAll, 30000); // Автообновление каждые 30 сек
@@ -16,11 +17,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Проверка статуса авторизации
 async function checkAuthStatus() {
+    console.log('🔐 Проверка статуса авторизации...');
     try {
         const status = await apiRequest('/telegram_status');
+        console.log('📦 Статус авторизации:', status);
         
         if (status.connected && status.user_id) {
             // Авторизован - показываем интерфейс
+            console.log('✅ Пользователь авторизован:', status.first_name);
             document.getElementById('authScreen').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
             loadStats();
@@ -28,6 +32,7 @@ async function checkAuthStatus() {
             loadSettings();
         } else {
             // Не авторизован - показываем экран авторизации
+            console.log('⚠️  Требуется авторизация');
             document.getElementById('authScreen').style.display = 'block';
             document.getElementById('mainInterface').style.display = 'none';
             
@@ -35,7 +40,7 @@ async function checkAuthStatus() {
             await checkTelegramConfig();
         }
     } catch (e) {
-        console.error('Ошибка проверки авторизации:', e);
+        console.error('❌ Ошибка проверки авторизации:', e);
         document.getElementById('authScreen').style.display = 'block';
         document.getElementById('mainInterface').style.display = 'none';
         await checkTelegramConfig();
@@ -160,17 +165,21 @@ async function loadStats() {
 
 // Загрузка чатов
 async function loadChats() {
+    console.log('🔄 Загрузка чатов...');
     await loadTrackedChats();
     await loadDialogs();
 }
 
 // Загрузка отслеживаемых чатов
 async function loadTrackedChats() {
+    console.log('📋 Загрузка отслеживаемых чатов...');
     try {
         const data = await apiRequest('/tracked_chats');
+        console.log('📦 Отслеживаемые чаты:', data);
         const tbody = document.getElementById('trackedChatsTable');
-
+        
         if (data.chats && data.chats.length > 0) {
+            console.log(`✅ Загружено ${data.chats.length} отслеживаемых чатов`);
             tbody.innerHTML = data.chats.map(chat => `
                 <tr>
                     <td>
@@ -197,6 +206,7 @@ async function loadTrackedChats() {
                 </tr>
             `).join('');
         } else {
+            console.log('⚠️  Нет отслеживаемых чатов');
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет отслеживаемых чатов. Добавьте чаты из списка ниже.</td></tr>';
         }
     } catch (e) {
@@ -207,20 +217,28 @@ async function loadTrackedChats() {
 
 // Загрузка диалогов из Telegram
 async function loadDialogs() {
+    console.log('📞 Загрузка диалогов из Telegram...');
     try {
         const tbody = document.getElementById('dialogsTable');
         tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>';
 
         // Получаем параметр include_private из чекбокса
         const includePrivate = document.getElementById('includePrivateChats')?.checked || false;
+        console.log(`📋 include_private=${includePrivate}`);
 
+        console.log('📡 Запрос к API /dialogs...');
         const data = await apiRequest(`/dialogs?limit=100&include_private=${includePrivate}`);
+        console.log('📦 Диалоги из API:', data);
 
         // Получаем список отслеживаемых чатов для фильтрации
+        console.log('📡 Запрос к API /tracked_chats...');
         const trackedData = await apiRequest('/tracked_chats');
+        console.log('📦 Отслеживаемые чаты для фильтрации:', trackedData);
         const trackedIds = new Set(trackedData.chats?.map(c => c.chat_id) || []);
+        console.log('📋 trackedIds:', Array.from(trackedIds));
 
         if (data.dialogs && data.dialogs.length > 0) {
+            console.log(`✅ Загружено ${data.dialogs.length} диалогов`);
             tbody.innerHTML = data.dialogs.map(dialog => {
                 const isTracked = trackedIds.has(dialog.id);
                 return `
@@ -248,11 +266,13 @@ async function loadDialogs() {
                 `;
             }).join('');
         } else {
+            console.log('⚠️  Нет диалогов');
             tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет диалогов</td></tr>';
         }
     } catch (e) {
         console.error('❌ Ошибка загрузки диалогов:', e);
-        document.getElementById('dialogsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+        console.error('Stack:', e.stack);
+        document.getElementById('dialogsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}<br><small>Проверьте консоль для деталей</small></td></tr>`;
     }
 }
 
@@ -319,15 +339,21 @@ async function loadMessages() {
     const chatId = document.getElementById('messageChatFilter').value;
     const search = document.getElementById('messageSearch').value;
     
+    console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
+
     try {
         let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
         if (chatId) url += `&chat_id=${chatId}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         
+        console.log('📡 Запрос к API:', url);
         const data = await apiRequest(url);
-        const tbody = document.getElementById('messagesTable');
+        console.log('📦 Сообщения из API:', data);
         
+        const tbody = document.getElementById('messagesTable');
+
         if (data.messages && data.messages.length > 0) {
+            console.log(`✅ Загружено ${data.messages.length} сообщений`);
             tbody.innerHTML = data.messages.map(msg => `
                 <tr>
                     <td>${escapeHtml(msg.chat_title || 'Unknown')}</td>
@@ -342,10 +368,13 @@ async function loadMessages() {
             `).join('');
             document.getElementById('messagesCount').textContent = `${data.count} сообщений`;
         } else {
+            console.log('⚠️  Нет сообщений');
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
         }
     } catch (e) {
-        console.error('Failed to load messages:', e);
+        console.error('❌ Ошибка загрузки сообщений:', e);
+        console.error('Stack:', e.stack);
+        document.getElementById('messagesTable').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
     }
 }
 
