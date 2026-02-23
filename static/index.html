@@ -391,15 +391,9 @@
 
                     <!-- Chats Tab -->
                     <div class="tab-pane fade" id="chats">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span><i class="bi bi-chat-left-text"></i> Чаты</span>
-                                <div class="input-group input-group-sm w-50">
-                                    <input type="text" class="form-control" id="chatSearch" placeholder="Поиск чатов...">
-                                    <button class="btn btn-tg" onclick="loadChats()">
-                                        <i class="bi bi-search"></i>
-                                    </button>
-                                </div>
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <i class="bi bi-check2-square"></i> Отслеживаемые чаты
                             </div>
                             <div class="card-body p-0">
                                 <div class="table-responsive">
@@ -407,14 +401,41 @@
                                         <thead>
                                             <tr>
                                                 <th>Чат</th>
+                                                <th>Тип</th>
                                                 <th>Сообщений</th>
-                                                <th>Загрузка</th>
+                                                <th>Статус</th>
+                                                <th>Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="trackedChatsTable">
+                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-chat-left-text"></i> Все диалоги Telegram</span>
+                                <button class="btn btn-sm btn-tg" onclick="loadDialogs()">
+                                    <i class="bi bi-arrow-clockwise"></i> Обновить
+                                </button>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-dark table-hover mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Чат</th>
+                                                <th>Тип</th>
+                                                <th>Непрочитанных</th>
                                                 <th>Последнее</th>
                                                 <th>Действия</th>
                                             </tr>
                                         </thead>
-                                        <tbody id="chatsTable">
-                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
+                                        <tbody id="dialogsTable">
+                                            <tr><td colspan="5" class="text-center">Нажмите "Обновить" для загрузки списка</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
