@@ -75,6 +75,33 @@
         .text-muted {
             color: #a0aec0 !important;
         }
+        /* Переопределяем Bootstrap text-muted для тёмной темы */
+        .text-muted, small, .small {
+            color: #a0aec0 !important;
+        }
+        /* Заголовки в статистике */
+        .stat-card h6 {
+            color: #8b949e !important;
+        }
+        /* Счётчики и цифры */
+        .stat-card h3 {
+            color: #e4e6eb !important;
+        }
+        /* Текст в таблицах */
+        .table td, .table th {
+            color: #e4e6eb !important;
+        }
+        .table td small, .table th small {
+            color: #8b949e !important;
+        }
+        /* Текст в формах */
+        .form-label {
+            color: #e4e6eb !important;
+        }
+        /* Текст подсказок */
+        .form-text, small.text-muted {
+            color: #8b949e !important;
+        }
         .form-control, .form-select {
             background: rgba(255,255,255,0.05);
             border: 1px solid rgba(255,255,255,0.1);
