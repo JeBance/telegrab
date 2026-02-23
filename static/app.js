@@ -302,22 +302,32 @@ async function loadChats() {
         const dbChats = await apiRequest('/chats');
         console.log('📦 Чаты из БД:', dbChats);
         
-        // Создаём мапу статистики с нормализацией ID
+        // Создаём мапу статистики с суммированием по названию
         const chatStats = {};
         (dbChats.chats || []).forEach(chat => {
-            // Нормализуем ID (убираем лишние нули, работаем со строками)
+            const chatTitle = chat.chat_title;
             const chatId = String(chat.chat_id);
-            chatStats[chatId] = {
-                message_count: chat.message_count || 0,
-                fully_loaded: chat.fully_loaded || false
-            };
-            // Добавляем альтернативный формат ID (с -100 и без)
+            
+            // Суммируем сообщения для чатов с одинаковым названием
+            if (!chatStats[chatTitle]) {
+                chatStats[chatTitle] = {
+                    message_count: 0,
+                    fully_loaded: false,
+                    ids: [] // Сохраняем все ID для этого чата
+                };
+            }
+            chatStats[chatTitle].message_count += chat.message_count || 0;
+            chatStats[chatTitle].ids.push(chatId);
+            
+            // fully_loaded = true только если все ID загружены полностью
+            if (chat.fully_loaded) {
+                chatStats[chatTitle].fully_loaded = true;
+            }
+            
+            // Добавляем альтернативный формат ID
             if (chatId.startsWith('-100')) {
-                const altId = chatId.substring(4); // Убираем -100
-                chatStats[altId] = chatStats[chatId];
-            } else if (chatId.startsWith('100')) {
-                const altId = '-' + chatId; // Добавляем -
-                chatStats[altId] = chatStats[chatId];
+                const altId = chatId.substring(4);
+                chatStats[chatTitle].ids.push(altId);
             }
         });
         
@@ -325,8 +335,7 @@ async function loadChats() {
         
         // Объединяем данные
         allChatsData = (dialogsData.dialogs || []).map(dialog => {
-            const dialogId = String(dialog.id);
-            const stats = chatStats[dialogId] || { message_count: 0, fully_loaded: false };
+            const stats = chatStats[dialog.title] || { message_count: 0, fully_loaded: false };
             
             return {
                 id: dialog.id,
