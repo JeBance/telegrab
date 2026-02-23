@@ -169,7 +169,7 @@ async function loadTrackedChats() {
     try {
         const data = await apiRequest('/tracked_chats');
         const tbody = document.getElementById('trackedChatsTable');
-        
+
         if (data.chats && data.chats.length > 0) {
             tbody.innerHTML = data.chats.map(chat => `
                 <tr>
@@ -187,10 +187,10 @@ async function loadTrackedChats() {
                         ${chat.fully_loaded ? '<span class="badge bg-success">Загружено</span>' : '<span class="badge bg-warning">В процессе</span>'}
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-light" onclick="loadChatHistory(${chat.chat_id})">
+                        <button class="btn btn-sm btn-outline-light" onclick="loadChatHistory('${chat.chat_id}')">
                             <i class="bi bi-download"></i> Загрузить
                         </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="removeTrackedChat(${chat.chat_id})">
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeTrackedChat('${chat.chat_id}')">
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
@@ -287,11 +287,14 @@ async function removeTrackedChat(chatId) {
 
 // Загрузка истории чата
 async function loadChatHistory(chatId) {
+    console.log('📥 Загрузка истории чата:', chatId);
     try {
         const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
+        console.log('✅ Результат:', result);
         addLog(`Загрузка истории начата: ${result.task_id}`, 'info');
         refreshQueue();
     } catch (e) {
+        console.error('❌ Ошибка загрузки:', e);
         alert('Ошибка: ' + e.message);
     }
 }
