@@ -275,34 +275,44 @@ async function loadChats() {
         console.log('📦 Диалоги из Telegram:', dialogsData);
         
         // Загружаем статистику по сообщениям из БД
-        const statsData = await apiRequest('/stats');
-        
-        // Объединяем данные
-        allChatsData = (dialogsData.dialogs || []).map(dialog => ({
-            id: dialog.id,
-            title: dialog.title,
-            type: dialog.type,
-            message_count: 0, // Будет обновлено ниже
-            last_message_date: dialog.last_message_date,
-            fully_loaded: false
-        }));
-        
-        // Получаем количество сообщений из БД для каждого чата
         const dbChats = await apiRequest('/chats');
+        console.log('📦 Чаты из БД:', dbChats);
+        
+        // Создаём мапу статистики с нормализацией ID
         const chatStats = {};
         (dbChats.chats || []).forEach(chat => {
-            chatStats[chat.chat_id] = {
+            // Нормализуем ID (убираем лишние нули, работаем со строками)
+            const chatId = String(chat.chat_id);
+            chatStats[chatId] = {
                 message_count: chat.message_count || 0,
                 fully_loaded: chat.fully_loaded || false
             };
+            // Добавляем альтернативный формат ID (с -100 и без)
+            if (chatId.startsWith('-100')) {
+                const altId = chatId.substring(4); // Убираем -100
+                chatStats[altId] = chatStats[chatId];
+            } else if (chatId.startsWith('100')) {
+                const altId = '-' + chatId; // Добавляем -
+                chatStats[altId] = chatStats[chatId];
+            }
         });
         
-        // Обновляем статистику
-        allChatsData = allChatsData.map(chat => ({
-            ...chat,
-            message_count: chatStats[chat.id]?.message_count || 0,
-            fully_loaded: chatStats[chat.id]?.fully_loaded || false
-        }));
+        console.log('📊 Статистика чатов:', chatStats);
+        
+        // Объединяем данные
+        allChatsData = (dialogsData.dialogs || []).map(dialog => {
+            const dialogId = String(dialog.id);
+            const stats = chatStats[dialogId] || { message_count: 0, fully_loaded: false };
+            
+            return {
+                id: dialog.id,
+                title: dialog.title,
+                type: dialog.type,
+                message_count: stats.message_count,
+                last_message_date: dialog.last_message_date,
+                fully_loaded: stats.fully_loaded
+            };
+        });
         
         console.log(`✅ Загружено ${allChatsData.length} чатов`);
         
