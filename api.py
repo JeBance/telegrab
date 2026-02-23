@@ -1453,11 +1453,64 @@ class TelegramClientWrapper:
         self.running = False
         self.qr_login = None
 
+    async def connect_to_telegram(self):
+        """Подключение к Telegram и регистрация всех обработчиков"""
+        if not await setup_telethon():
+            return False
+
+        # Определяем имя файла сессии
+        session_name = f"telegrab_{CONFIG['API_ID']}_{CONFIG['PHONE'].replace('+', '')}"
+
+        # Создаём клиент
+        self.client = TelegramClient(
+            session=f"data/{session_name}",
+            api_id=CONFIG['API_ID'],
+            api_hash=CONFIG['API_HASH'],
+            device_model="Telegrab UserBot 5.0",
+            app_version="5.0.0",
+            system_version="Linux"
+        )
+
+        await self.client.connect()
+        print("✅ Клиент подключён к Telegram")
+
+        if not await self.client.is_user_authorized():
+            print("⚠️  Требуется авторизация через UI")
+            print(f"   Откройте http://127.0.0.1:{CONFIG['API_PORT']}/ui")
+            return False
+
+        # Авторизован!
+        me = await self.client.get_me()
+        print(f"✅ Авторизован как: {me.first_name} (@{me.username or 'no username'})")
+
+        # Запуск обработчика задач
+        print("🔄 Запуск обработчика задач...")
+        asyncio.create_task(task_queue.process_tasks(self.client))
+
+        # Регистрация обработчика новых сообщений — работает 24/7!
+        print("📩 Регистрация обработчика новых сообщений...")
+        from telethon import events
+        @self.client.on(events.NewMessage)
+        async def message_handler(event):
+            await self.handle_new_message(event)
+
+        self.running = True
+        print("✅ Обработчик задач и обработчик сообщений запущены")
+
+        # Автозагрузка если включена
+        if CONFIG['AUTO_LOAD_MISSED']:
+            print("🔍 Автодогрузка пропущенных...")
+            asyncio.create_task(self.auto_load_missed())
+        if CONFIG['AUTO_LOAD_HISTORY']:
+            print("📚 Автозагрузка истории...")
+            asyncio.create_task(self.auto_load_history())
+
+        print("✅ Telegram клиент полностью инициализирован")
+        return True
+
     async def start(self):
-        """Запуск Telegram клиента — теперь не используется при старте"""
-        # Клиент создаётся лениво в запросах API
-        print("ℹ️  Telegram клиент будет создан при первом запросе авторизации")
-        pass
+        """Устаревший метод, используется connect_to_telegram()"""
+        return await self.connect_to_telegram()
 
     async def client_polling(self):
         """Polling для поддержания соединения"""

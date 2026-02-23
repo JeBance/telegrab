@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegrab - UserBot для сохранения сообщений Telegram с HTTP API
-Версия 4.0 с FastAPI, WebSocket и аутентификацией
+Версия 5.0 - Архитектура для работы 24/7
 """
 
 import os
@@ -9,7 +9,6 @@ import sys
 import asyncio
 import signal
 import uuid
-import shutil
 
 # Шаблон конфигурации .env
 ENV_TEMPLATE = """# ============================================================
@@ -249,43 +248,46 @@ def main():
     print("\n" + "="*60)
 
     async def run_all():
+        """Запуск всех компонентов Telegrab"""
         import uvicorn
-        from api import app, task_queue
-
-        # Запуск API сервера в отдельном потоке
-        async def run_uvicorn():
-            try:
-                await asyncio.to_thread(
-                    uvicorn.run,
-                    app,
-                    host="0.0.0.0",
-                    port=CONFIG['API_PORT'],
-                    log_level="warning"
-                )
-            except Exception as e:
-                print(f"❌ Ошибка API сервера: {e}")
-
-        api_task = asyncio.create_task(run_uvicorn())
-
-        # Ждём пока API сервер запустится
-        await asyncio.sleep(2)
-        print("✅ API сервер запущен")
-
-        print("\n🤖 Запуск Telegram UserBot...")
-        try:
-            await tg_client.start()
-            
-            # Если клиент авторизован — запускаем обработчик задач
-            if tg_client.client and await tg_client.client.is_user_authorized():
-                print("\n✅ Клиент авторизован, запуск обработчика задач...")
-                from api import task_queue
-                asyncio.create_task(task_queue.process_tasks(tg_client.client))
-                tg_client.running = True
-                print("🔄 Обработчик задач запущен")
-        except Exception as e:
-            print(f"❌ Ошибка Telegram клиента: {e}")
-            task_queue.stop()
-            raise
+        from api import app, tg_client
+        
+        print("🚀 Запуск Telegrab 5.0...")
+        
+        # 1. Инициализация Telegram клиента
+        print("\n📱 Инициализация Telegram клиента...")
+        if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:
+            print("❌ Ошибка: не заданы API_ID, API_HASH или PHONE в .env")
+            print("   Получите ключи на https://my.telegram.org")
+            sys.exit(1)
+        
+        # 2. Подключение к Telegram и регистрация обработчиков
+        print("🔌 Подключение к Telegram...")
+        await tg_client.connect_to_telegram()
+        
+        # 3. Запуск API сервера
+        print("\n🌐 Запуск API сервера...")
+        print(f"   Порт: {CONFIG['API_PORT']}")
+        print(f"   UI: http://127.0.0.1:{CONFIG['API_PORT']}/ui")
+        print(f"   API: http://127.0.0.1:{CONFIG['API_PORT']}/docs")
+        print(f"   WebSocket: ws://127.0.0.1:{CONFIG['API_PORT']}/ws")
+        
+        # Запускаем uvicorn в том же event loop
+        config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=CONFIG['API_PORT'],
+            log_level="warning",
+            loop="asyncio"
+        )
+        server = uvicorn.Server(config)
+        
+        print("\n" + "="*60)
+        print("✅ Telegrab запущен и работает 24/7")
+        print("   Нажмите Ctrl+C для остановки")
+        print("="*60 + "\n")
+        
+        await server.serve()
 
     try:
         asyncio.run(run_all())
