@@ -1283,9 +1283,9 @@ async def join_chat(client, chat_identifier):
 async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=None):
     """Загрузка истории с дозированием запросов
     
-    ВАЖНО: Используем offset_date вместо offset_id!
-    Telegram get_messages(offset_id=X) возвращает сообщения с ID < X,
-    а не начиная с X. Поэтому offset_id пропускает новые сообщения.
+    ВАЖНО: Используем min_id вместо offset_id!
+    - offset_id: возвращает сообщения с ID < X (старые) ❌
+    - min_id: возвращает сообщения с ID > X (новые) ✅
     """
     try:
         # Пробуем получить чат разными способами
@@ -1333,12 +1333,13 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 request_limit = limit - message_count
 
             try:
-                # ИСПОЛЬЗУЕМ offset_date ВМЕСТО offset_id!
-                # Это корректно загружает сообщения ПОСЛЕ последней даты
+                # ИСПОЛЬЗУЕМ min_id ВМЕСТО offset_id!
+                # offset_id: возвращает сообщения с ID < X (старые) ❌
+                # min_id: возвращает сообщения с ID > X (новые) ✅
                 messages = await client.get_messages(
                     chat,
                     limit=request_limit,
-                    offset_date=last_message_date
+                    min_id=last_loaded_id
                 )
             except Exception as e:
                 print(f"⚠️ Ошибка загрузки: {e}")
