@@ -679,7 +679,7 @@ async def remove_tracked_chat(chat_id: int, api_key: str = Depends(get_api_key))
     return {'status': 'ok', 'removed': result}
 
 @app.get("/dialogs")
-async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):
+async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100, include_private: bool = False):
     """Получить список диалогов из Telegram"""
     try:
         if not tg_client.client:
@@ -694,33 +694,66 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100):
                 app_version="4.0.0",
                 system_version="Linux"
             )
-        
+
         # Переподключаем если не подключён
         if not tg_client.client.is_connected():
             print("🔌 Подключение к Telegram...")
             await tg_client.client.connect()
-        
+
         # Проверяем авторизацию
         if not await tg_client.client.is_user_authorized():
             raise HTTPException(status_code=401, detail="Требуется авторизация в Telegram")
-        
-        print(f"📞 Получение диалогов (limit={limit})...")
+
+        print(f"📞 Получение диалогов (limit={limit}, include_private={include_private})...")
         dialogs_list = []
         async for dialog in tg_client.client.iter_dialogs(limit=limit):
-            if dialog.is_group or dialog.is_channel:
-                dialogs_list.append({
-                    'id': dialog.id,
-                    'title': dialog.title,
-                    'type': 'group' if dialog.is_group else 'channel',
-                    'unread_count': dialog.unread_count,
-                    'last_message_date': dialog.date.isoformat() if dialog.date else None
-                })
+            # Фильтруем по типу если нужно
+            if include_private:
+                # Все диалоги включая личные
+                pass
+            elif dialog.is_group or dialog.is_channel:
+                pass  # Только группы и каналы
+            else:
+                continue  # Пропускаем личные чаты
+
+            dialogs_list.append({
+                'id': dialog.id,
+                'title': dialog.title,
+                'type': 'private' if dialog.is_user else ('group' if dialog.is_group else 'channel'),
+                'unread_count': dialog.unread_count,
+                'last_message_date': dialog.date.isoformat() if dialog.date else None
+            })
         print(f"✅ Найдено диалогов: {len(dialogs_list)}")
         return {'count': len(dialogs_list), 'dialogs': dialogs_list}
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Ошибка получения диалогов: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/start_worker")
+async def start_worker(api_key: str = Depends(get_api_key)):
+    """Запустить обработчик задач вручную"""
+    try:
+        if not tg_client.client:
+            raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
+
+        if not tg_client.client.is_connected():
+            await tg_client.client.connect()
+
+        if not await tg_client.client.is_user_authorized():
+            raise HTTPException(status_code=401, detail="Требуется авторизация")
+
+        if tg_client.running:
+            return {'status': 'ok', 'message': 'Обработчик уже запущен'}
+
+        # Запуск обработчика задач
+        asyncio.create_task(task_queue.process_tasks(tg_client.client))
+        tg_client.running = True
+
+        print("✅ Обработчик задач запущен")
+        return {'status': 'ok', 'message': 'Обработчик задач запущен'}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/messages")
@@ -998,36 +1031,40 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
     try:
         if not tg_client.client:
             raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
-        
+
         # Переподключаем для чтения обновлённой сессии
         if tg_client.client.is_connected():
             await tg_client.client.disconnect()
             await asyncio.sleep(0.5)
-        
+
         await tg_client.client.connect()
-        
+        print("✅ Клиент подключён для проверки авторизации")
+
         if await tg_client.client.is_user_authorized():
             # Проверяем не запущены ли уже обработчики
             if not tg_client.running:
                 me = await tg_client.client.get_me()
-                
+                print(f"✅ Авторизация подтверждена: {me.first_name}")
+
                 # Запуск обработчика задач
+                print("🔄 Запуск обработчика задач...")
                 asyncio.create_task(task_queue.process_tasks(tg_client.client))
-                
+
                 # Обработчик новых сообщений (если ещё не зарегистрирован)
                 from telethon import events
                 @tg_client.client.on(events.NewMessage)
                 async def message_handler(event):
                     await tg_client.handle_new_message(event)
-                
+
                 # Автозагрузка
                 if CONFIG['AUTO_LOAD_MISSED']:
                     asyncio.create_task(tg_client.auto_load_missed())
                 if CONFIG['AUTO_LOAD_HISTORY']:
                     asyncio.create_task(tg_client.auto_load_history())
-                
+
                 tg_client.running = True
-                
+                print("✅ Обработчик задач запущен")
+
                 return {
                     'authorized': True,
                     'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
@@ -1038,9 +1075,10 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
                     'authorized': True,
                     'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
                 }
-        
+
         return {'authorized': False, 'message': 'Ожидание сканирования QR-кода'}
     except Exception as e:
+        print(f"❌ Ошибка check_qr_login: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/qr_login/recreate")

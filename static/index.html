@@ -353,6 +353,11 @@
                             <div class="card-body">
                                 <div class="row g-3">
                                     <div class="col-md-3">
+                                        <button class="btn btn-tg w-100" onclick="startWorker()">
+                                            <i class="bi bi-play-fill"></i> Запустить обработчик
+                                        </button>
+                                    </div>
+                                    <div class="col-md-3">
                                         <button class="btn btn-tg w-100" onclick="loadMissedAll()">
                                             <i class="bi bi-download"></i> Догрузить пропущенные
                                         </button>
@@ -418,9 +423,15 @@
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span><i class="bi bi-chat-left-text"></i> Все диалоги Telegram</span>
-                                <button class="btn btn-sm btn-tg" onclick="loadDialogs()">
-                                    <i class="bi bi-arrow-clockwise"></i> Обновить
-                                </button>
+                                <div class="d-flex gap-2 align-items-center">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="includePrivateChats" onchange="loadDialogs()">
+                                        <label class="form-check-label small" for="includePrivateChats">Личные чаты</label>
+                                    </div>
+                                    <button class="btn btn-sm btn-tg" onclick="loadDialogs()">
+                                        <i class="bi bi-arrow-clockwise"></i> Обновить
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body p-0">
                                 <div class="table-responsive">
@@ -548,18 +559,31 @@
                                     </div>
 
                                     <h6 class="mb-3"><i class="bi bi-sliders"></i> Параметры загрузки</h6>
+                                    <div class="alert alert-info" role="alert">
+                                        <i class="bi bi-info-circle"></i> 
+                                        <strong>Лимиты Telegram API:</strong>
+                                        <ul class="mb-0 mt-2 small">
+                                            <li>Максимум 500 сообщений в одном запросе (рекомендуется 100)</li>
+                                            <li>Максимум 30-50 запросов в секунду (рекомендуется 1-2 для безопасности)</li>
+                                            <li>При превышении лимитов возможна временная блокировка (FLOOD_WAIT)</li>
+                                            <li>Дневной лимит: ~100,000 сообщений</li>
+                                        </ul>
+                                    </div>
                                     <div class="row g-3 mb-4">
                                         <div class="col-md-3">
                                             <label class="form-label">Запросов в секунду</label>
-                                            <input type="number" class="form-control" id="settingRequestsPerSecond" value="1">
+                                            <input type="number" class="form-control" id="settingRequestsPerSecond" value="1" min="1" max="10">
+                                            <small class="text-muted">Рекомендуется: 1-2</small>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label">Сообщений за запрос</label>
-                                            <input type="number" class="form-control" id="settingMessagesPerRequest" value="100">
+                                            <input type="number" class="form-control" id="settingMessagesPerRequest" value="100" min="1" max="500">
+                                            <small class="text-muted">Максимум: 500</small>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label">Лимит истории</label>
-                                            <input type="number" class="form-control" id="settingHistoryLimit" value="200">
+                                            <input type="number" class="form-control" id="settingHistoryLimit" value="200" min="1">
+                                            <small class="text-muted">0 = без лимита</small>
                                         </div>
                                         <div class="col-md-3">
                                             <label class="form-label">Макс. чатов</label>
