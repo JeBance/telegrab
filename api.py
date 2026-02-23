@@ -706,23 +706,31 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100, inc
 
         print(f"📞 Получение диалогов (limit={limit}, include_private={include_private})...")
         dialogs_list = []
-        async for dialog in tg_client.client.iter_dialogs(limit=limit):
-            # Фильтруем по типу если нужно
-            if include_private:
-                # Все диалоги включая личные
-                pass
-            elif dialog.is_group or dialog.is_channel:
-                pass  # Только группы и каналы
-            else:
-                continue  # Пропускаем личные чаты
+        
+        # Используем asyncio.wait_for для таймаута
+        try:
+            async with asyncio.timeout(30):  # 30 секунд таймаут
+                async for dialog in tg_client.client.iter_dialogs(limit=limit):
+                    # Фильтруем по типу если нужно
+                    if include_private:
+                        # Все диалоги включая личные
+                        pass
+                    elif dialog.is_group or dialog.is_channel:
+                        pass  # Только группы и каналы
+                    else:
+                        continue  # Пропускаем личные чаты
 
-            dialogs_list.append({
-                'id': dialog.id,
-                'title': dialog.title,
-                'type': 'private' if dialog.is_user else ('group' if dialog.is_group else 'channel'),
-                'unread_count': dialog.unread_count,
-                'last_message_date': dialog.date.isoformat() if dialog.date else None
-            })
+                    dialogs_list.append({
+                        'id': dialog.id,
+                        'title': dialog.title,
+                        'type': 'private' if dialog.is_user else ('group' if dialog.is_group else 'channel'),
+                        'unread_count': dialog.unread_count,
+                        'last_message_date': dialog.date.isoformat() if dialog.date else None
+                    })
+        except asyncio.TimeoutError:
+            print("⚠️  Таймаут получения диалогов (30 сек)")
+            # Возвращаем что успели получить
+
         print(f"✅ Найдено диалогов: {len(dialogs_list)}")
         return {'count': len(dialogs_list), 'dialogs': dialogs_list}
     except HTTPException:
