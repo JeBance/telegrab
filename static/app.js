@@ -153,7 +153,14 @@ function handleWebSocketMessage(data) {
             loadStats();
             // Если задача была на загрузку истории — обновляем чаты
             if (data.task.type === 'load_history' || data.task.type === 'load_missed') {
-                loadTrackedChats();
+                // Находим чат в кэше и обновляем
+                const chatId = data.task.data?.chat_id;
+                if (chatId && allChatsData) {
+                    const chat = allChatsData.find(c => c.id == chatId);
+                    if (chat) {
+                        loadChats(); // Полное обновление
+                    }
+                }
             }
             break;
             
@@ -165,21 +172,28 @@ function handleWebSocketMessage(data) {
             if (document.getElementById('messages')?.classList.contains('active')) {
                 loadMessages();
             }
-            // Обновляем отслеживаемые чаты
-            loadTrackedChats();
+            // Обновляем кэш чатов (новое сообщение = чат активен)
+            if (allChatsData && data.message.chat_id) {
+                const chat = allChatsData.find(c => c.id == data.message.chat_id);
+                if (chat) {
+                    chat.message_count = (chat.message_count || 0) + 1;
+                    chat.last_message_date = data.message.message_date;
+                    applyChatFilters(); // Плавное обновление
+                }
+            }
             break;
             
         case 'chat_loaded':
             console.log('📚 Чат загружен:', data);
             addLog(`Чат "${data.chat_title}": загружено ${data.new_messages} сообщений`, 'success');
-            loadTrackedChats();
+            loadChats(); // Обновляем таблицу
             loadStats();
             break;
             
         case 'missed_loaded':
             console.log('🔍 Пропущенные загружены:', data);
             addLog(`Загружено ${data.count} пропущенных сообщений`, 'info');
-            loadTrackedChats();
+            loadChats();
             loadStats();
             break;
             
@@ -241,169 +255,184 @@ async function loadStats() {
     }
 }
 
+// Данные чатов (кэш для плавной фильтрации)
+let allChatsData = [];
+let chatFilterDebounce = null;
+
 // Загрузка чатов
 async function loadChats() {
     console.log('🔄 Загрузка чатов...');
-    await loadTrackedChats();
-    await loadDialogs();
-}
-
-// Загрузка отслеживаемых чатов
-async function loadTrackedChats() {
-    console.log('📋 Загрузка отслеживаемых чатов...');
-    try {
-        const data = await apiRequest('/tracked_chats');
-        console.log('📦 Отслеживаемые чаты:', data);
-        const tbody = document.getElementById('trackedChatsTable');
-        
-        if (data.chats && data.chats.length > 0) {
-            console.log(`✅ Загружено ${data.chats.length} отслеживаемых чатов`);
-            tbody.innerHTML = data.chats.map(chat => `
-                <tr>
-                    <td>
-                        <strong>${escapeHtml(chat.chat_title)}</strong>
-                        <br><small class="text-muted">ID: ${chat.chat_id}</small>
-                    </td>
-                    <td>
-                        <span class="badge ${chat.chat_type === 'channel' ? 'bg-info' : 'bg-success'}">
-                            ${chat.chat_type === 'channel' ? 'Канал' : 'Группа'}
-                        </span>
-                    </td>
-                    <td>
-                        <div class="text-center">
-                            <strong>${chat.total_loaded || 0}</strong>
-                            <br><small class="text-muted">сообщ. в БД</small>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="text-center">
-                            ${chat.fully_loaded ? '<span class="badge bg-success">Загружено</span>' : '<span class="badge bg-warning">В процессе</span>'}
-                            <br><small class="text-muted">${chat.last_loading_date ? 'Загружено: ' + formatDate(chat.last_loading_date) : 'Не загружался'}</small>
-                        </div>
-                    </td>
-                    <td>
-                        <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.chat_id}')">
-                            <i class="bi bi-download"></i> Загрузить
-                        </button>
-                        <button class="btn btn-sm btn-outline-danger" onclick="removeTrackedChat('${chat.chat_id}')">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-        } else {
-            console.log('⚠️  Нет отслеживаемых чатов');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет отслеживаемых чатов. Добавьте чаты из списка ниже.</td></tr>';
-        }
-    } catch (e) {
-        console.error('❌ Ошибка загрузки отслеживаемых чатов:', e);
-        document.getElementById('trackedChatsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
-    }
-}
-
-// Загрузка диалогов из Telegram
-async function loadDialogs() {
-    console.log('📞 Загрузка диалогов из Telegram...');
-    try {
-        const tbody = document.getElementById('dialogsTable');
+    const tbody = document.getElementById('chatsTable');
+    
+    // Показываем индикатор загрузки только если таблица пуста
+    if (allChatsData.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>';
-
-        // Получаем параметр include_private из чекбокса
-        const includePrivate = document.getElementById('includePrivateChats')?.checked || false;
-        console.log(`📋 include_private=${includePrivate}`);
-
-        console.log('📡 Запрос к API /dialogs...');
-        const data = await apiRequest(`/dialogs?limit=100&include_private=${includePrivate}`);
-        console.log('📦 Диалоги из API:', data);
-
-        // Получаем список отслеживаемых чатов для фильтрации
-        console.log('📡 Запрос к API /tracked_chats...');
-        const trackedData = await apiRequest('/tracked_chats');
-        console.log('📦 Отслеживаемые чаты для фильтрации:', trackedData);
-        const trackedIds = new Set(trackedData.chats?.map(c => c.chat_id) || []);
-        console.log('📋 trackedIds:', Array.from(trackedIds));
-
-        if (data.dialogs && data.dialogs.length > 0) {
-            console.log(`✅ Загружено ${data.dialogs.length} диалогов`);
-            tbody.innerHTML = data.dialogs.map(dialog => {
-                const isTracked = trackedIds.has(dialog.id);
-                return `
-                    <tr class="${isTracked ? 'table-success' : ''}">
-                        <td>
-                            <strong>${escapeHtml(dialog.title)}</strong>
-                            <br><small class="text-muted">ID: ${dialog.id}</small>
-                        </td>
-                        <td>
-                            <span class="badge ${dialog.type === 'channel' ? 'bg-info' : dialog.type === 'private' ? 'bg-secondary' : 'bg-success'}">
-                                ${dialog.type === 'channel' ? 'Канал' : dialog.type === 'private' ? 'Личный' : 'Группа'}
-                            </span>
-                        </td>
-                        <td>${dialog.unread_count || 0}</td>
-                        <td>${formatDate(dialog.last_message_date)}</td>
-                        <td>
-                            ${isTracked ?
-                                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Отслеживается</span>' :
-                                `<button class="btn btn-sm btn-tg" onclick="addTrackedChat(${dialog.id}, '${escapeHtml(dialog.title).replace(/'/g, "\\'")}', '${dialog.type}')">
-                                    <i class="bi bi-plus-circle"></i> Добавить
-                                </button>`
-                            }
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        } else {
-            console.log('⚠️  Нет диалогов');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Нет диалогов</td></tr>';
-        }
-    } catch (e) {
-        console.error('❌ Ошибка загрузки диалогов:', e);
-        console.error('Stack:', e.stack);
-        document.getElementById('dialogsTable').innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}<br><small>Проверьте консоль для деталей</small></td></tr>`;
     }
-}
-
-// Добавить чат в отслеживаемые
-async function addTrackedChat(chatId, chatTitle, chatType) {
+    
     try {
-        console.log(`📋 Добавление чата в отслеживаемые: ${chatTitle} (${chatId})`);
+        // Загружаем диалоги из Telegram
+        const dialogsData = await apiRequest('/dialogs?limit=200&include_private=true');
+        console.log('📦 Диалоги из Telegram:', dialogsData);
         
-        await apiRequest(`/tracked_chats?chat_id=${chatId}&chat_title=${encodeURIComponent(chatTitle)}&chat_type=${chatType}`, {
-            method: 'POST'
+        // Загружаем статистику по сообщениям из БД
+        const statsData = await apiRequest('/stats');
+        
+        // Объединяем данные
+        allChatsData = (dialogsData.dialogs || []).map(dialog => ({
+            id: dialog.id,
+            title: dialog.title,
+            type: dialog.type,
+            message_count: 0, // Будет обновлено ниже
+            last_message_date: dialog.last_message_date,
+            fully_loaded: false
+        }));
+        
+        // Получаем количество сообщений из БД для каждого чата
+        const dbChats = await apiRequest('/chats');
+        const chatStats = {};
+        (dbChats.chats || []).forEach(chat => {
+            chatStats[chat.chat_id] = {
+                message_count: chat.message_count || 0,
+                fully_loaded: chat.fully_loaded || false
+            };
         });
         
-        addLog(`Чат "${chatTitle}" добавлен в отслеживаемые`, 'success');
+        // Обновляем статистику
+        allChatsData = allChatsData.map(chat => ({
+            ...chat,
+            message_count: chatStats[chat.id]?.message_count || 0,
+            fully_loaded: chatStats[chat.id]?.fully_loaded || false
+        }));
+        
+        console.log(`✅ Загружено ${allChatsData.length} чатов`);
+        
+        // Применяем фильтры (это обновит таблицу)
+        applyChatFilters();
+        
+    } catch (e) {
+        console.error('❌ Ошибка загрузки чатов:', e);
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+    }
+}
+
+// Применение фильтров (с debounce для плавности)
+function applyChatFilters() {
+    // Debounce 300ms для плавной фильтрации
+    if (chatFilterDebounce) {
+        clearTimeout(chatFilterDebounce);
+    }
+    
+    chatFilterDebounce = setTimeout(() => {
+        const filtered = allChatsData.filter(chat => {
+            // Фильтр по типу
+            if (chat.type === 'channel' && !document.getElementById('filterChannels').checked) return false;
+            if (chat.type === 'group' && !document.getElementById('filterGroups').checked) return false;
+            if (chat.type === 'private' && !document.getElementById('filterPrivate').checked) return false;
+            
+            // Фильтр по загруженным
+            if (document.getElementById('filterLoaded').checked && chat.message_count === 0) return false;
+            
+            // Поиск по названию
+            const search = document.getElementById('chatSearchInput').value.toLowerCase();
+            if (search && !chat.title.toLowerCase().includes(search)) return false;
+            
+            return true;
+        });
+        
+        renderChatsTable(filtered);
+    }, 300);
+}
+
+// Отрисовка таблицы чатов
+function renderChatsTable(chats) {
+    const tbody = document.getElementById('chatsTable');
+    
+    if (chats.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Чаты не найдены</td></tr>';
+        document.getElementById('chatsCount').textContent = '0 чатов';
+        document.getElementById('loadedCount').textContent = '0 загружено';
+        return;
+    }
+    
+    // Сортировка: сначала с сообщениями, потом по дате
+    chats.sort((a, b) => {
+        if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+        return new Date(b.last_message_date || 0) - new Date(a.last_message_date || 0);
+    });
+    
+    tbody.innerHTML = chats.map(chat => `
+        <tr>
+            <td>
+                <strong>${escapeHtml(chat.title)}</strong>
+                <br><small class="text-muted">ID: ${chat.id}</small>
+            </td>
+            <td>
+                <span class="badge ${getTypeBadgeClass(chat.type)}">
+                    ${getTypeName(chat.type)}
+                </span>
+            </td>
+            <td>
+                <strong>${chat.message_count}</strong>
+                ${chat.message_count > 0 ? '<br><small class="text-success">в БД</small>' : ''}
+            </td>
+            <td>
+                ${chat.last_message_date ? formatDate(chat.last_message_date) : '-'}
+            </td>
+            <td>
+                <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')">
+                    <i class="bi bi-download"></i> Загрузить
+                </button>
+            </td>
+        </tr>
+    `).join('');
+    
+    // Обновляем счётчики
+    document.getElementById('chatsCount').textContent = `${chats.length} чатов`;
+    document.getElementById('loadedCount').textContent = `${chats.filter(c => c.message_count > 0).length} загружено`;
+}
+
+// Тип чата (человекочитаемый)
+function getTypeName(type) {
+    const names = {
+        'channel': 'Канал',
+        'group': 'Группа',
+        'private': 'Личный'
+    };
+    return names[type] || type;
+}
+
+// Класс для бейджа типа
+function getTypeBadgeClass(type) {
+    const classes = {
+        'channel': 'bg-info',
+        'group': 'bg-success',
+        'private': 'bg-secondary'
+    };
+    return classes[type] || 'bg-secondary';
+}
+
+// Добавить чат в отслеживаемые (теперь просто загружает)
+async function addTrackedChat(chatId, chatTitle, chatType) {
+    try {
+        console.log(`📋 Загрузка чата: ${chatTitle} (${chatId})`);
         
         // Автоматически запускаем загрузку истории
-        console.log('🚀 Автоматический запуск загрузки истории...');
+        console.log('🚀 Запуск загрузки истории...');
         const config = await apiRequest('/config');
         const historyLimit = config.HISTORY_LIMIT_PER_CHAT || 200;
         
         const loadResult = await apiRequest(`/load?chat_id=${chatId}&limit=${historyLimit}`, { method: 'POST' });
-        addLog(`Загрузка истории начата: ${loadResult.task_id} (лимит: ${historyLimit})`, 'info');
+        addLog(`Загрузка чата "${chatTitle}" начата: ${loadResult.task_id}`, 'info');
         
-        // Перезагружаем списки
-        await loadChats();
+        // Обновляем таблицу через 3 секунды (когда начнётся загрузка)
+        setTimeout(() => {
+            loadChats();
+        }, 3000);
+        
         refreshQueue();
     } catch (e) {
-        console.error('Ошибка добавления:', e);
-        alert('Ошибка добавления чата: ' + e.message);
-    }
-}
-
-// Удалить чат из отслеживаемых
-async function removeTrackedChat(chatId) {
-    if (!confirm('Удалить чат из списка отслеживаемых? История сообщений сохранится в базе.')) return;
-    
-    try {
-        await apiRequest(`/tracked_chats/${chatId}`, {
-            method: 'DELETE'
-        });
-        
-        addLog('Чат удалён из отслеживаемых', 'info');
-        loadChats(); // Перезагружаем списки
-    } catch (e) {
-        console.error('Ошибка удаления:', e);
-        alert('Ошибка удаления чата: ' + e.message);
+        console.error('Ошибка загрузки:', e);
+        alert('Ошибка загрузки чата: ' + e.message);
     }
 }
 
