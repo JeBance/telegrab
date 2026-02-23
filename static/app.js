@@ -767,7 +767,8 @@ async function loadQrCode() {
 async function checkQrStatus() {
     try {
         const data = await apiRequest('/qr_login/check');
-        
+        console.log('QR статус:', data);
+
         if (data.authorized) {
             // Успешная авторизация
             showAuthSuccess(data.user);
@@ -779,12 +780,14 @@ async function checkQrStatus() {
 
 // Показ успеха авторизации
 function showAuthSuccess(user) {
+    console.log('Авторизация успешна:', user);
+    
     // Останавливаем проверку
     if (qrCheckInterval) {
         clearInterval(qrCheckInterval);
         qrCheckInterval = null;
     }
-    
+
     document.getElementById('qrAuthContent').innerHTML = `
         <div class="alert alert-success">
             <i class="bi bi-check-circle"></i>
@@ -794,6 +797,13 @@ function showAuthSuccess(user) {
         </div>
     `;
     
+    // Закрываем модальное окно
+    const modalEl = document.getElementById('qrAuthModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+        modal.hide();
+    }
+
     // Перезагружаем страницу через 2 секунды
     setTimeout(() => {
         location.reload();
