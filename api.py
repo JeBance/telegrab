@@ -350,7 +350,10 @@ class Database:
             cursor.execute('''
                 SELECT t.chat_id, t.chat_title, t.chat_type, t.enabled, t.added_at,
                        COALESCE(s.total_loaded, 0) as total_loaded,
-                       COALESCE(s.fully_loaded, 0) as fully_loaded
+                       COALESCE(s.fully_loaded, 0) as fully_loaded,
+                       COALESCE(s.last_loaded_id, 0) as last_loaded_id,
+                       s.last_message_date,
+                       s.last_loading_date
                 FROM tracked_chats t
                 LEFT JOIN chat_loading_status s ON t.chat_id = s.chat_id
                 ORDER BY t.added_at DESC
@@ -398,6 +401,25 @@ class Database:
         except Exception as e:
             print(f"❌ Ошибка удаления отслеживаемого чата: {e}")
             return False
+
+    def get_tracked_chat_info(self, chat_id):
+        """Получить информацию об отслеживаемом чате"""
+        import sqlite3
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+
+            cursor.execute('SELECT * FROM tracked_chats WHERE chat_id = ?', (chat_id,))
+            result = cursor.fetchone()
+            conn.close()
+
+            if result:
+                return dict(result)
+            return None
+        except Exception as e:
+            print(f"❌ Ошибка получения информации: {e}")
+            return None
 
     def get_stats(self):
         """Получение статистики"""
