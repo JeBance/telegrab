@@ -191,12 +191,20 @@ async function loadTrackedChats() {
                             ${chat.chat_type === 'channel' ? 'Канал' : 'Группа'}
                         </span>
                     </td>
-                    <td>${chat.total_loaded || 0}</td>
                     <td>
-                        ${chat.fully_loaded ? '<span class="badge bg-success">Загружено</span>' : '<span class="badge bg-warning">В процессе</span>'}
+                        <div class="text-center">
+                            <strong>${chat.total_loaded || 0}</strong>
+                            <br><small class="text-muted">сообщ. в БД</small>
+                        </div>
                     </td>
                     <td>
-                        <button class="btn btn-sm btn-outline-light" onclick="loadChatHistory('${chat.chat_id}')">
+                        <div class="text-center">
+                            ${chat.fully_loaded ? '<span class="badge bg-success">Загружено</span>' : '<span class="badge bg-warning">В процессе</span>'}
+                            <br><small class="text-muted">${chat.last_loading_date ? 'Загружено: ' + formatDate(chat.last_loading_date) : 'Не загружался'}</small>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.chat_id}')">
                             <i class="bi bi-download"></i> Загрузить
                         </button>
                         <button class="btn btn-sm btn-outline-danger" onclick="removeTrackedChat('${chat.chat_id}')">
@@ -312,10 +320,14 @@ async function removeTrackedChat(chatId) {
 async function loadChatHistory(chatId) {
     console.log('📥 Загрузка истории чата:', chatId);
     try {
-        console.log('📡 Запрос к API /load...');
-        const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
+        // Получаем настройки из конфига
+        const config = await apiRequest('/config');
+        const historyLimit = config.HISTORY_LIMIT_PER_CHAT || 200;
+        
+        console.log('📡 Запрос к API /load с лимитом:', historyLimit);
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=${historyLimit}`, { method: 'POST' });
         console.log('✅ Результат:', result);
-        addLog(`Загрузка истории начата: ${result.task_id}`, 'info');
+        addLog(`Загрузка истории начата: ${result.task_id} (лимит: ${historyLimit})`, 'info');
         console.log('🔄 Обновление очереди задач...');
         refreshQueue();
     } catch (e) {
