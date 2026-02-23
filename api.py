@@ -504,10 +504,12 @@ class TaskQueue:
     async def process_tasks(self, client):
         """Обработчик задач из очереди"""
         self.processing = True
+        print("🔄 Обработчик задач запущен")
 
         while self.processing:
             try:
                 task = self.queue.get(timeout=1)
+                print(f"📦 Получена задача {task['id']}: {task['type']}")
 
                 current_time = time.time()
                 time_since_last = current_time - self.last_request_time
@@ -516,17 +518,22 @@ class TaskQueue:
 
                 task['status'] = 'processing'
                 task['started_at'] = datetime.now().isoformat()
+                print(f"▶️  Начато выполнение задачи {task['id']}")
 
                 try:
                     if task['type'] == 'load_history':
+                        print(f"📚 Загрузка истории для {task['data'].get('chat_id')}...")
                         await self.process_load_history(client, task)
                     elif task['type'] == 'join_and_load':
+                        print(f"📥 Вступление и загрузка для {task['data'].get('chat_id')}...")
                         await self.process_join_and_load(client, task)
                     elif task['type'] == 'load_missed':
+                        print(f"🔍 Догрузка пропущенных для {task['data'].get('chat_id')}...")
                         await self.process_load_missed(client, task)
 
                     task['status'] = 'completed'
                     task['completed_at'] = datetime.now().isoformat()
+                    print(f"✅ Задача {task['id']} завершена")
 
                     await manager.broadcast({
                         'type': 'task_completed',
@@ -756,12 +763,14 @@ async def start_worker(api_key: str = Depends(get_api_key)):
             return {'status': 'ok', 'message': 'Обработчик уже запущен'}
 
         # Запуск обработчика задач
+        print("🔄 Ручной запуск обработчика задач...")
         asyncio.create_task(task_queue.process_tasks(tg_client.client))
         tg_client.running = True
 
         print("✅ Обработчик задач запущен")
         return {'status': 'ok', 'message': 'Обработчик задач запущен'}
     except Exception as e:
+        print(f"❌ Ошибка start_worker: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/messages")
@@ -1057,18 +1066,17 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
                 # Запуск обработчика задач
                 print("🔄 Запуск обработчика задач...")
                 asyncio.create_task(task_queue.process_tasks(tg_client.client))
+                
+                # Запуск автозагрузки если включена
+                if CONFIG['AUTO_LOAD_HISTORY']:
+                    print("📚 Автозагрузка истории включена")
+                    asyncio.create_task(tg_client.auto_load_history())
 
                 # Обработчик новых сообщений (если ещё не зарегистрирован)
                 from telethon import events
                 @tg_client.client.on(events.NewMessage)
                 async def message_handler(event):
                     await tg_client.handle_new_message(event)
-
-                # Автозагрузка
-                if CONFIG['AUTO_LOAD_MISSED']:
-                    asyncio.create_task(tg_client.auto_load_missed())
-                if CONFIG['AUTO_LOAD_HISTORY']:
-                    asyncio.create_task(tg_client.auto_load_history())
 
                 tg_client.running = True
                 print("✅ Обработчик задач запущен")
