@@ -1355,9 +1355,14 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                     message_count += 1
                     total_loaded += 1
                     last_message_date = message.date.isoformat()
-                    last_loaded_id = message.id
 
-            if message_count % 100 == 0:
+                # Всегда обновляем last_loaded_id — даже для дубликатов!
+                # Это критично для продолжения загрузки с правильного места
+                last_loaded_id = max(last_loaded_id, message.id)
+
+            # Обновляем статус каждые 100 полученных сообщений (не только сохранённых)
+            # Это обеспечивает корректное продолжение загрузки при сбоях
+            if len(messages) % 100 == 0:
                 db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
 
             # Проверяем есть ли ещё сообщения
