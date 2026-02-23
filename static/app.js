@@ -10,39 +10,83 @@ let qrCheckInterval = null;
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Telegrab UI загружен');
+    updateLoadingStatus('Проверка соединения...');
+    
+    // Проверяем что Bootstrap загрузился
+    if (typeof bootstrap === 'undefined') {
+        console.error('❌ Bootstrap не загружен!');
+        document.getElementById('loadingStatus').textContent = 'Ошибка: Bootstrap не загружен. Проверьте соединение.';
+        document.getElementById('loadingStatus').className = 'text-danger';
+        return;
+    }
+    
     checkAuthStatus();
     initWebSocket();
     setInterval(refreshAll, 30000); // Автообновление каждые 30 сек
 });
 
+// Обновление статуса загрузки
+function updateLoadingStatus(message) {
+    const statusEl = document.getElementById('loadingStatus');
+    if (statusEl) {
+        statusEl.textContent = message;
+    }
+    console.log('📋', message);
+}
+
 // Проверка статуса авторизации
 async function checkAuthStatus() {
     console.log('🔐 Проверка статуса авторизации...');
     try {
+        updateLoadingStatus('Проверка авторизации...');
         const status = await apiRequest('/telegram_status');
         console.log('📦 Статус авторизации:', status);
         
         if (status.connected && status.user_id) {
             // Авторизован - показываем интерфейс
             console.log('✅ Пользователь авторизован:', status.first_name);
+            updateLoadingStatus('Загрузка данных...');
+            
+            // Скрываем экран загрузки
+            document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('authScreen').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
+            
             loadStats();
             loadChats();
             loadSettings();
         } else {
             // Не авторизован - показываем экран авторизации
             console.log('⚠️  Требуется авторизация');
-            document.getElementById('authScreen').style.display = 'block';
-            document.getElementById('mainInterface').style.display = 'none';
+            updateLoadingStatus('Требуется авторизация...');
+            
+            // Скрываем экран загрузки, показываем авторизацию
+            setTimeout(() => {
+                document.getElementById('loadingScreen').style.display = 'none';
+                document.getElementById('authScreen').style.display = 'block';
+                document.getElementById('mainInterface').style.display = 'none';
+            }, 500);
             
             // Проверяем есть ли конфигурация
             await checkTelegramConfig();
         }
     } catch (e) {
         console.error('❌ Ошибка проверки авторизации:', e);
-        document.getElementById('authScreen').style.display = 'block';
-        document.getElementById('mainInterface').style.display = 'none';
+        updateLoadingStatus('Ошибка подключения к серверу');
+        document.getElementById('loadingStatus').className = 'text-danger';
+        
+        // Показываем ошибку через 2 секунды
+        setTimeout(() => {
+            document.getElementById('loadingScreen').style.display = 'none';
+            document.getElementById('authScreen').style.display = 'block';
+            document.getElementById('mainInterface').style.display = 'none';
+            
+            const authStatus = document.getElementById('authStatus');
+            if (authStatus) {
+                authStatus.innerHTML = `<div class="alert alert-danger">Ошибка подключения: ${e.message}<br><small>Проверьте что сервер запущен</small></div>`;
+            }
+        }, 1000);
+        
         await checkTelegramConfig();
     }
 }
