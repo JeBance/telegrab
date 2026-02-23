@@ -252,6 +252,9 @@ def main():
         import uvicorn
         from api import app, task_queue
 
+        # Отключаем uvloop для совместимости с Telethon
+        uvicorn.config.UVICORN_LOOP = "asyncio"
+
         # Запуск API сервера в отдельном потоке
         async def run_uvicorn():
             try:
@@ -260,7 +263,8 @@ def main():
                     app,
                     host="0.0.0.0",
                     port=CONFIG['API_PORT'],
-                    log_level="warning"
+                    log_level="warning",
+                    loop="asyncio"
                 )
             except Exception as e:
                 print(f"❌ Ошибка API сервера: {e}")
@@ -273,6 +277,7 @@ def main():
 
         print("\n🤖 Запуск Telegram UserBot...")
         try:
+            # Запускаем Telegram клиента в том же loop
             await tg_client.start()
         except Exception as e:
             print(f"❌ Ошибка Telegram клиента: {e}")
