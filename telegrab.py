@@ -248,40 +248,30 @@ def main():
 
     print("\n" + "="*60)
 
-    async def run_all():
-        import uvicorn
-        from api import app, task_queue
+async def run_all():
+    import uvicorn
+    from api import app, task_queue, tg_client
 
-        # Отключаем uvloop для совместимости с Telethon
-        uvicorn.config.UVICORN_LOOP = "asyncio"
-
-        # Запуск API сервера в отдельном потоке
-        async def run_uvicorn():
-            try:
-                await asyncio.to_thread(
-                    uvicorn.run,
-                    app,
-                    host="0.0.0.0",
-                    port=CONFIG['API_PORT'],
-                    log_level="warning",
-                    loop="asyncio"
-                )
-            except Exception as e:
-                print(f"❌ Ошибка API сервера: {e}")
-
-        api_task = asyncio.create_task(run_uvicorn())
-
-        # Ждём пока API сервер запустится
-        await asyncio.sleep(2)
-        print("✅ API сервер запущен")
-
-        print("\n🤖 Запуск Telegram UserBot...")
-        try:
-            # Запускаем Telegram клиента в том же loop
-            await tg_client.start()
-        except Exception as e:
-            print(f"❌ Ошибка Telegram клиента: {e}")
-            raise
+    print("🚀 Запуск Telegrab...")
+    
+    # Сначала запускаем Telegram клиента
+    print("\n🤖 Запуск Telegram UserBot...")
+    try:
+        await tg_client.start()
+    except Exception as e:
+        print(f"❌ Ошибка Telegram клиента: {e}")
+    
+    # Затем запускаем API сервер (блокирующе)
+    print("\n🌐 Запуск API сервера...")
+    await uvicorn.Server(
+        config=uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=CONFIG['API_PORT'],
+            log_level="warning",
+            loop="asyncio"
+        )
+    ).serve()
 
     try:
         asyncio.run(run_all())
