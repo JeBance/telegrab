@@ -312,9 +312,11 @@ async function removeTrackedChat(chatId) {
 async function loadChatHistory(chatId) {
     console.log('📥 Загрузка истории чата:', chatId);
     try {
+        console.log('📡 Запрос к API /load...');
         const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
         console.log('✅ Результат:', result);
         addLog(`Загрузка истории начата: ${result.task_id}`, 'info');
+        console.log('🔄 Обновление очереди задач...');
         refreshQueue();
     } catch (e) {
         console.error('❌ Ошибка загрузки:', e);
