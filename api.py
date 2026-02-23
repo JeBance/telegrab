@@ -1281,12 +1281,17 @@ async def join_chat(client, chat_identifier):
     return None
 
 async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=None):
-    """Загрузка истории с дозированием запросов"""
+    """Загрузка истории с дозированием запросов
+    
+    ВАЖНО: Используем offset_date вместо offset_id!
+    Telegram get_messages(offset_id=X) возвращает сообщения с ID < X,
+    а не начиная с X. Поэтому offset_id пропускает новые сообщения.
+    """
     try:
         # Пробуем получить чат разными способами
         chat = None
         chat_id_str = str(chat_id)
-        
+
         # Если это username (начинается с @)
         if chat_id_str.startswith('@'):
             chat = await client.get_entity(chat_id_str)
@@ -1301,21 +1306,23 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
             except (ValueError, TypeError):
                 # Если не числовой ID — пробуем как строку
                 chat = await client.get_entity(chat_id_str)
-        
+
         if not chat:
             raise Exception(f"Чат не найден: {chat_id}")
-        
+
         chat_title = getattr(chat, 'title', '') or getattr(chat, 'username', f"chat_{chat_id}")
 
         status = db.get_loading_status(chat_id)
         last_loaded_id = status.get('last_loaded_id', 0)
         total_loaded = status.get('total_loaded', 0)
 
+        # Получаем дату последнего сообщения для offset_date
+        last_message_date = db.get_last_message_date_in_chat(chat_id)
+
         if status.get('fully_loaded', 0) == 1 and limit == 0:
             return {'chat_id': chat_id, 'chat_title': chat_title, 'already_loaded': True}
 
         message_count = 0
-        last_message_date = None
         has_more_messages = True
 
         while has_more_messages:
@@ -1326,7 +1333,13 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 request_limit = limit - message_count
 
             try:
-                messages = await client.get_messages(chat, limit=request_limit, offset_id=last_loaded_id)
+                # ИСПОЛЬЗУЕМ offset_date ВМЕСТО offset_id!
+                # Это корректно загружает сообщения ПОСЛЕ последней даты
+                messages = await client.get_messages(
+                    chat,
+                    limit=request_limit,
+                    offset_date=last_message_date
+                )
             except Exception as e:
                 print(f"⚠️ Ошибка загрузки: {e}")
                 break
@@ -1354,7 +1367,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 if saved:
                     message_count += 1
                     total_loaded += 1
-                    last_message_date = message.date.isoformat()
+                    last_message_date = message.date
 
                 # Всегда обновляем last_loaded_id — даже для дубликатов!
                 # Это критично для продолжения загрузки с правильного места
