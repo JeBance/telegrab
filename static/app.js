@@ -1028,12 +1028,12 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
 
     // Собираем данные конфигурации
     const configData = {
-        API_ID: document.getElementById('settingApiId').value,
+        API_ID: parseInt(document.getElementById('settingApiId').value) || 0,
         API_HASH: document.getElementById('settingApiHash').value,
         PHONE: document.getElementById('settingPhone').value,
         REQUESTS_PER_SECOND: parseInt(document.getElementById('settingRequestsPerSecond').value) || 1,
         MESSAGES_PER_REQUEST: parseInt(document.getElementById('settingMessagesPerRequest').value) || 100,
-        HISTORY_LIMIT_PER_CHAT: parseInt(document.getElementById('settingHistoryLimit').value) || 200,
+        HISTORY_LIMIT_PER_CHAT: parseInt(document.getElementById('settingHistoryLimit').value) ?? 200,
         MAX_CHATS_TO_LOAD: parseInt(document.getElementById('settingMaxChats').value) || 20,
         AUTO_LOAD_HISTORY: true,
         AUTO_LOAD_MISSED: true
