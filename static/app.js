@@ -80,6 +80,10 @@ async function checkTelegramConfig() {
     } catch (e) {}
 }
 
+// Пустые функции для совместимости
+function loadSettings() {}
+function refreshQueue() {}
+
 // WebSocket
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
