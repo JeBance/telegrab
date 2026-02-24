@@ -916,6 +916,8 @@ class DatabaseV6:
         cursor.execute('DELETE FROM message_files')
         cursor.execute('DELETE FROM message_edits')
         cursor.execute('DELETE FROM message_events')
+        cursor.execute('DELETE FROM chats')
+        cursor.execute('DELETE FROM tracked_chats')
 
         conn.commit()
         conn.close()
