@@ -1313,14 +1313,15 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                     logger.debug(f"Сообщение {message.id} уже в БД (дубликат)")
                     consecutive_duplicates += 1
 
-                # Всегда обновляем last_loaded_id — даже для дубликатов!
-                # Это критично для продолжения загрузки с правильного места
-                last_loaded_id = max(last_loaded_id, message.id)
+                # Обновляем last_loaded_id до минимального ID для продолжения загрузки
+                # При загрузке истории offset_id возвращает сообщения с ID < offset_id
+                # Поэтому нужно использовать min() чтобы двигаться к более старым сообщениям
+                if last_loaded_id == 0 or message.id < last_loaded_id:
+                    last_loaded_id = message.id
 
-            # Обновляем статус каждые 100 полученных сообщений (не только сохранённых)
+            # Обновляем статус после каждой итерации (не только каждые 100)
             # Это обеспечивает корректное продолжение загрузки при сбоях
-            if len(messages) % 100 == 0:
-                db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
+            db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded)
 
             # Проверяем есть ли ещё сообщения
             if len(messages) < request_limit:
