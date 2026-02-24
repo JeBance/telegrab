@@ -331,9 +331,6 @@
                             <button class="nav-link active text-start" data-bs-toggle="pill" data-bs-target="#dashboard">
                                 <i class="bi bi-speedometer2 me-2"></i> Обзор
                             </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#chats">
-                                <i class="bi bi-chat-left-text me-2"></i> Чаты
-                            </button>
                             <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#messages">
                                 <i class="bi bi-envelope me-2"></i> Сообщения
                             </button>
@@ -416,44 +413,8 @@
                             </div>
                         </div>
 
-                        <!-- Quick Actions -->
-                        <div class="card mb-4">
-                            <div class="card-header">
-                                <i class="bi bi-lightning-charge"></i> Быстрые действия
-                            </div>
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-md-3">
-                                        <button class="btn btn-tg w-100" onclick="startWorker()">
-                                            <i class="bi bi-play-fill"></i> Запустить обработчик
-                                        </button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <button class="btn btn-tg w-100" onclick="loadMissedAll()">
-                                            <i class="bi bi-download"></i> Догрузить пропущенные
-                                        </button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <button class="btn btn-outline-light w-100" onclick="showJoinModal()">
-                                            <i class="bi bi-person-plus"></i> Вступить в чат
-                                        </button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <button class="btn btn-outline-light w-100" onclick="exportData()">
-                                            <i class="bi bi-file-earmark-arrow-down"></i> Экспорт данных
-                                        </button>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <button class="btn btn-outline-light w-100" onclick="clearDatabase()">
-                                            <i class="bi bi-trash"></i> Очистить БД
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Recent Activity -->
-                        <div class="card">
+                        <div class="card mb-4">
                             <div class="card-header">
                                 <i class="bi bi-activity"></i> Активность
                             </div>
@@ -463,10 +424,8 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    <!-- Chats Tab -->
-                    <div class="tab-pane fade" id="chats">
+                        <!-- Чаты Telegram -->
                         <div class="card">
                             <div class="card-header">
                                 <div class="d-flex justify-content-between align-items-center">
@@ -528,7 +487,7 @@
                                             </tr>
                                         </thead>
                                         <tbody id="chatsTable">
-                                            <tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>
+                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
