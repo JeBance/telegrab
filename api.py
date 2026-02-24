@@ -1527,10 +1527,14 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         cursor.execute('SELECT MAX(message_id) FROM messages WHERE chat_id = ?', (chat_id,))
         result = cursor.fetchone()[0]
         conn.close()
+        
+        # Если в БД есть сообщения, используем MAX(message_id) как точку отсчёта
+        # offset_id возвращает сообщения ДО этого ID (более старые) - для загрузки истории
         if result:
             last_loaded_id = result
             logger.debug(f"MAX(message_id) в БД: {last_loaded_id}")
-
+        
+        # Если чат уже полностью загружен и нет лимита - пропускаем
         if status.get('fully_loaded', 0) == 1 and limit == 0:
             logger.info(f"Чат {chat_id} уже полностью загружен")
             return {'chat_id': chat_id, 'chat_title': chat_title, 'already_loaded': True}
@@ -1538,6 +1542,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         message_count = 0
         last_message_date = None
         has_more_messages = True
+        consecutive_duplicates = 0  # Счётчик последовательных дубликатов
 
         while has_more_messages:
             await asyncio.sleep(1.0 / CONFIG['REQUESTS_PER_SECOND'])
@@ -1550,6 +1555,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 # Используем offset_id для загрузки истории (сообщения ДО этого ID)
                 # offset_id: возвращает сообщения с ID < X (старые) ✅ для истории
                 # min_id: возвращает сообщения с ID > X (новые) ✅ для новых сообщений
+                logger.info(f"Загрузка сообщений: chat={chat_id}, offset_id={last_loaded_id}, limit={request_limit}")
                 messages = await retry_on_error(
                     client.get_messages,
                     chat,
@@ -1558,6 +1564,9 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                     max_retries=3,
                     base_delay=1.0
                 )
+                logger.info(f"Получено сообщений: {len(messages)}")
+                if messages:
+                    logger.debug(f"Диапазон ID: {messages[-1].id if messages else 'N/A'} - {messages[0].id if messages else 'N/A'}")
             except FloodWaitError as e:
                 # Telegram требует ожидания при превышении лимита запросов
                 wait_time = e.seconds
@@ -1594,6 +1603,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
             for message in messages:
                 if not message.text:
+                    logger.debug(f"Пропущено сообщение {message.id} без текста (type={type(message).__name__})")
                     continue
 
                 sender = await message.get_sender()
@@ -1610,9 +1620,14 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
                 # Увеличиваем счётчики только если сообщение сохранено
                 if saved:
+                    logger.debug(f"Сохранено сообщение {message.id}")
                     message_count += 1
                     total_loaded += 1
                     last_message_date = message.date
+                    consecutive_duplicates = 0  # Сбрасываем счётчик дубликатов
+                else:
+                    logger.debug(f"Сообщение {message.id} уже в БД (дубликат)")
+                    consecutive_duplicates += 1
 
                 # Всегда обновляем last_loaded_id — даже для дубликатов!
                 # Это критично для продолжения загрузки с правильного места
@@ -1626,6 +1641,11 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
             # Проверяем есть ли ещё сообщения
             if len(messages) < request_limit:
                 has_more_messages = False
+            
+            # Если все сообщения в пакете - дубликаты, значит мы достигли уже загруженной части
+            if consecutive_duplicates >= request_limit and request_limit > 0:
+                logger.info(f"Обнаружено {consecutive_duplicates} последовательных дубликатов, остановка загрузки")
+                has_more_messages = False
 
             # Если задан лимит и он достигнут
             if limit > 0 and message_count >= limit:
@@ -1634,6 +1654,8 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         # Определяем полностью ли загружен чат
         fully_loaded = (limit == 0 and not has_more_messages)
         db.update_loading_status(chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded)
+
+        logger.info(f"Загрузка завершена: {message_count} сообщений, fully_loaded={fully_loaded}, has_more={has_more_messages}")
 
         await manager.broadcast({
             'type': 'chat_loaded',
