@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Telegrab - UserBot для сохранения сообщений Telegram с HTTP API
-Версия 6.0 - Архитектура RAW + Meta для полного сохранения данных
+Версия 5.0 - Архитектура для работы 24/7
 """
 
 import os
@@ -9,10 +9,6 @@ import sys
 import asyncio
 import signal
 import uuid
-
-# Версия
-VERSION = "6.0.0"
-ARCHITECTURE = "RAW + Meta"
 
 # Шаблон конфигурации .env
 ENV_TEMPLATE = """# ============================================================
@@ -227,22 +223,19 @@ def main():
     CONFIG = load_config()
 
     print("\n" + "="*60)
-    print(f"                T E L E G R A B   v{VERSION}")
-    print(f"      Архитектура: {ARCHITECTURE}")
+    print("                T E L E G R A B   v4.0")
     print("      UserBot + FastAPI + WebSocket + Auth")
     print("="*60)
 
     os.makedirs("data", exist_ok=True)
 
     from api import run_api_server, tg_client, set_config_from_ui
-    from database_v6 import db_v6
 
     print(f"\n🌐 API порт: {CONFIG['API_PORT']}")
     print(f"🔑 API ключ: {CONFIG['API_KEY']}")
     print(f"\n📚 Документация API: http://127.0.0.1:{CONFIG['API_PORT']}/docs")
     print(f"🌐 Веб-интерфейс: http://127.0.0.1:{CONFIG['API_PORT']}/ui")
     print(f"🔌 WebSocket: ws://127.0.0.1:{CONFIG['API_PORT']}/ws")
-    print(f"💾 БД v6: data/telegrab_v6.db")
     
     # Проверка конфигурации Telegram
     if not CONFIG['API_ID'] or not CONFIG['API_HASH'] or not CONFIG['PHONE']:

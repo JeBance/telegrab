@@ -47,17 +47,6 @@ from telethon.errors import (
     RPCError
 )
 
-# ============================================================
-# БАЗА ДАННЫХ v6.0 (RAW + Meta архитектура)
-# ============================================================
-from database_v6 import DatabaseV6, db_v6
-
-# Глобальный флаг использования v6
-USE_V6 = True
-
-# Версия для API
-VERSION = "6.0.0"
-
 
 # ==================== RETRY ЛОГИКА ====================
 async def retry_on_error(func, *args, max_retries=3, base_delay=1.0, exceptions=(FloodWaitError,), **kwargs):
@@ -766,8 +755,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Telegrab API",
-    description="API для архивирования Telegram сообщений. Архитектура RAW + Meta (v6.0)",
-    version="6.0.0",
+    description="API для архивирования Telegram сообщений",
+    version="4.0.0",
     lifespan=lifespan
 )
 
@@ -791,26 +780,17 @@ async def ui_index():
     """Веб-интерфейс управления"""
     return FileResponse("static/index.html")
 
-# ============================================================
-# ИНТЕГРАЦИЯ V6 ENDPOINTS
-# ============================================================
-from api_v6 import create_v6_routes
-create_v6_routes(app, get_api_key, db_v6, CONFIG)
-
 # ==================== HTTP ENDPOINTS ====================
 @app.get("/")
 async def root():
     """Информация о сервисе"""
     return {
         'status': 'ok',
-        'service': f'Telegrab API v{VERSION}',
-        'version': VERSION,
-        'architecture': 'RAW + Meta',
+        'service': 'Telegrab API v4.0',
         'timestamp': datetime.now().isoformat(),
         'queue_size': task_queue.queue.qsize(),
         'websocket_endpoint': '/ws',
-        'docs': '/docs',
-        'v6_endpoints': '/v6/stats'
+        'docs': '/docs'
     }
 
 @app.get("/health")
@@ -1975,25 +1955,16 @@ class TelegramClientWrapper:
             return {'connected': False, 'message': str(e)}
 
     async def handle_new_message(self, event):
-        """Обработка нового сообщения (v6.0 RAW + Meta)"""
+        """Обработка нового сообщения"""
         try:
             message = event.message
-            chat_id = event.chat_id
             
-            # Используем v6 обработчик если включено
-            if USE_V6:
-                from message_handler_v6 import message_handler_v6
-                message_handler_v6.manager = manager
-                await message_handler_v6.handle_new_message(event)
-                return
-            
-            # Старый метод (v5.0) если v6 отключён
             # Определяем тип медиа
             media_type = None
             file_id = None
             file_name = None
             file_size = None
-
+            
             if message.photo:
                 media_type = 'photo'
                 file_id = str(message.photo.id) if hasattr(message.photo, 'id') else None
@@ -2006,7 +1977,7 @@ class TelegramClientWrapper:
                 file_id = str(message.document.id) if hasattr(message.document, 'id') else None
                 file_size = message.document.size if hasattr(message.document, 'size') else None
                 file_name = message.document.file_name if hasattr(message.document, 'file_name') else None
-
+            
             # Пропускаем только системные сообщения без текста и медиа
             if not message.text and not media_type:
                 logger.debug(f"Пропущено сообщение {message.id} без текста и медиа")
@@ -2014,7 +1985,7 @@ class TelegramClientWrapper:
 
             # Формируем текст для логирования
             log_text = message.text[:50] if message.text else f"[{media_type}]"
-            logger.info(f"📩 Новое сообщение в чате {chat_id}: {log_text}...")
+            logger.info(f"📩 Новое сообщение в чате {event.chat_id}: {log_text}...")
 
             chat = await message.get_chat()
             sender = await message.get_sender()
@@ -2025,7 +1996,7 @@ class TelegramClientWrapper:
                 sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', '') or getattr(sender, 'title', 'Unknown')
 
             message_date = message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date)
-
+            
             # Получаем текст или описание медиа
             text = message.text or f"[{media_type}]"
 
@@ -2054,6 +2025,7 @@ class TelegramClientWrapper:
                     'message_date': message_date
                 }
             })
+            print("📡 Отправлено уведомление WebSocket")
 
         except Exception as e:
             print(f"❌ Ошибка обработки сообщения: {e}")

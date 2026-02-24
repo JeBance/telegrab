@@ -3,85 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegrab v6.0 - Панель управления</title>
-
-    <!-- Preconnect for performance -->
+    <title>Telegrab - Панель управления</title>
+    
+    <!-- Preload critical resources -->
     <link rel="preconnect" href="https://cdn.jsdelivr.net">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-
+    
+    <!-- Fallback styles if JS fails -->
+    <noscript>
+        <style>
+            body { background: #1c252e; color: #e4e6eb; font-family: system-ui, sans-serif; padding: 20px; }
+            .card { background: #242f3d; padding: 20px; margin: 20px; border-radius: 12px; }
+        </style>
+    </noscript>
+    
     <style>
         :root {
             --tg-blue: #2AABEE;
             --tg-dark: #1c252e;
             --tg-card: #242f3d;
-            --tg-hover: #2d3a4a;
-            --tg-success: #3fb950;
-            --tg-warning: #d29922;
-            --tg-error: #f85149;
-            --tg-text: #e4e6eb;
-            --tg-muted: #8b949e;
         }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             background: linear-gradient(135deg, #1c252e 0%, #0d1117 100%);
             min-height: 100vh;
-            color: var(--tg-text);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            color: #e4e6eb;
         }
-
-        /* Navbar */
         .navbar {
             background: rgba(36, 47, 61, 0.95) !important;
             backdrop-filter: blur(10px);
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-
         .navbar-brand {
             color: var(--tg-blue) !important;
             font-weight: 700;
-            font-size: 1.5rem;
         }
-
-        .version-badge {
-            background: rgba(42, 171, 238, 0.2);
-            color: var(--tg-blue);
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            margin-left: 8px;
-        }
-
-        /* Cards */
         .card {
             background: var(--tg-card);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 12px;
-            margin-bottom: 24px;
+            color: #e4e6eb;
         }
-
         .card-header {
             background: rgba(255,255,255,0.05);
             border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding: 16px 20px;
             font-weight: 600;
+            color: #e4e6eb;
         }
-
-        .card-body { padding: 20px; }
-
-        /* Stats */
+        .card-body {
+            color: #e4e6eb;
+        }
+        .card-title {
+            color: #e4e6eb;
+        }
         .stat-card {
-            transition: transform 0.2s, box-shadow 0.2s;
-            border-radius: 12px;
+            transition: transform 0.2s;
         }
-
+        .stat-card h6 {
+            color: #8b949e !important;
+        }
+        .stat-card h3 {
+            color: #e4e6eb !important;
+        }
+        /* Quick stats в sidebar */
+        #quickStats span:first-child {
+            color: #8b949e !important;
+        }
+        #quickStats strong {
+            color: #e4e6eb !important;
+        }
         .stat-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
         }
-
         .stat-icon {
             width: 60px;
             height: 60px;
@@ -91,316 +84,243 @@
             justify-content: center;
             font-size: 28px;
         }
-
-        /* Nav tabs */
-        .nav-pills .nav-link {
-            color: var(--tg-muted);
-            padding: 12px 16px;
-            border-radius: 8px;
-            transition: all 0.2s;
-        }
-
-        .nav-pills .nav-link.active {
-            background: var(--tg-blue);
-            color: white;
-        }
-
-        .nav-pills .nav-link:hover {
-            color: var(--tg-text);
-            background: rgba(255,255,255,0.05);
-        }
-
-        /* Tables */
-        .table {
-            color: var(--tg-text);
-            margin-bottom: 0;
-        }
-
-        .table-dark {
-            --bs-table-bg: transparent;
-        }
-
-        .table td, .table th {
-            color: var(--tg-text) !important;
-            background-color: transparent !important;
-            border-color: rgba(255,255,255,0.1);
-            vertical-align: middle;
-        }
-
-        .table-hover tbody tr:hover {
-            background: rgba(255,255,255,0.03);
-        }
-
-        /* Forms */
-        .form-control, .form-select {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            color: var(--tg-text);
-        }
-
-        .form-control:focus, .form-select:focus {
-            background: rgba(255,255,255,0.1);
-            border-color: var(--tg-blue);
-            color: var(--tg-text);
-            box-shadow: 0 0 0 0.25rem rgba(42, 171, 238, 0.25);
-        }
-
-        .form-label {
-            color: var(--tg-text);
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-
-        /* Buttons */
         .btn-tg {
             background: var(--tg-blue);
             color: white;
             border: none;
         }
-
         .btn-tg:hover {
             background: #229ED9;
             color: white;
         }
-
-        /* Badges */
-        .badge {
-            font-weight: 500;
-            padding: 6px 10px;
-            border-radius: 6px;
+        .table {
+            color: #e4e6eb;
         }
-
-        .badge-media {
-            background: rgba(210, 153, 34, 0.2);
-            color: var(--tg-warning);
+        .table-dark {
+            --bs-table-bg: transparent;
         }
-
-        /* Terminal / Log */
+        .table td, .table th {
+            color: #e4e6eb !important;
+            font-size: 0.875rem !important;
+            vertical-align: top !important;
+            background-color: transparent !important;
+        }
+        .table td small, .table th small {
+            color: #a0aec0 !important;
+            font-size: 0.75rem !important;
+        }
+        /* Таблица сообщений - компактный стиль */
+        #messagesTable td:nth-child(2) {
+            white-space: normal !important;
+            word-wrap: break-word !important;
+            word-break: break-word !important;
+            max-width: 600px !important;
+            line-height: 1.4 !important;
+        }
+        #messagesTable td {
+            padding: 8px 12px !important;
+        }
+        /* Таблица чатов - стили */
+        #chatsTable td, #chatsTable th {
+            color: #e4e6eb !important;
+            background-color: rgba(36, 47, 61, 0.5) !important;
+        }
+        #chatsTable td strong {
+            color: #ffffff !important;
+        }
+        #chatsTable td small {
+            color: #8b949e !important;
+        }
+        /* Выделенные строки (отслеживаемые чаты) */
+        .table-success, .table-success td, .table-success th {
+            background: rgba(42, 171, 238, 0.2) !important;
+            color: #e4e6eb !important;
+        }
+        .table-success td strong, .table-success th strong {
+            color: #ffffff !important;
+        }
+        .table-success td small, .table-success th small {
+            color: #8b949e !important;
+        }
+        .table-success .badge {
+            color: #fff !important;
+        }
+        .text-muted {
+            color: #8b949e !important;
+        }
+        /* Текст в формах */
+        .form-label {
+            color: #e4e6eb !important;
+        }
+        /* Текст подсказок */
+        .form-text, small.text-muted {
+            color: #8b949e !important;
+        }
+        .form-control, .form-select {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #e4e6eb;
+        }
+        .form-control:focus, .form-select:focus {
+            background: rgba(255,255,255,0.1);
+            border-color: var(--tg-blue);
+            color: #e4e6eb;
+            box-shadow: 0 0 0 0.25rem rgba(42, 171, 238, 0.25);
+        }
+        .badge-chat {
+            background: rgba(42, 171, 238, 0.2);
+            color: var(--tg-blue);
+        }
+        .progress {
+            background: rgba(255,255,255,0.1);
+        }
         .log-terminal {
             background: #0d1117;
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 8px;
-            padding: 16px;
+            padding: 15px;
             font-family: 'Courier New', monospace;
             font-size: 13px;
             max-height: 400px;
             overflow-y: auto;
         }
-
         .log-entry {
-            margin: 4px 0;
-            padding: 4px 8px;
-            border-radius: 4px;
+            margin: 3px 0;
         }
-
         .log-info { color: #58a6ff; }
         .log-success { color: #3fb950; }
         .log-warning { color: #d29922; }
         .log-error { color: #f85149; }
-
-        /* Status indicator */
         .status-dot {
             width: 10px;
             height: 10px;
             border-radius: 50%;
             display: inline-block;
             margin-right: 8px;
-            animation: pulse 2s infinite;
         }
-
-        .status-online {
-            background: var(--tg-success);
-            box-shadow: 0 0 10px var(--tg-success);
-        }
-
-        .status-offline {
-            background: var(--tg-error);
-            animation: none;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Modal */
+        .status-online { background: #3fb950; box-shadow: 0 0 10px #3fb950; }
+        .status-offline { background: #f85149; }
         .modal-content {
             background: var(--tg-card);
             border: 1px solid rgba(255,255,255,0.1);
         }
-
         .modal-header {
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-
         .modal-footer {
             border-top: 1px solid rgba(255,255,255,0.1);
         }
-
-        /* RAW JSON viewer */
-        .json-viewer {
-            background: #0d1117;
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            padding: 16px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            max-height: 500px;
-            overflow: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+            border-width: 0.15em;
         }
-
-        /* Loading screen */
-        .loading-screen {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: #1c252e;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .chat-item {
+            cursor: pointer;
+            transition: background 0.2s;
         }
-
-        /* Search highlight */
-        .search-highlight {
-            background: rgba(210, 153, 34, 0.3);
-            padding: 2px 4px;
-            border-radius: 3px;
+        .chat-item:hover {
+            background: rgba(255,255,255,0.05);
         }
-
-        /* Media type icons */
-        .media-icon {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 0.85rem;
+        .nav-pills .nav-link {
+            color: #8b949e;
         }
-
-        .media-icon-photo { background: rgba(42, 171, 238, 0.2); color: var(--tg-blue); }
-        .media-icon-video { background: rgba(210, 153, 34, 0.2); color: var(--tg-warning); }
-        .media-icon-document { background: rgba(63, 185, 80, 0.2); color: var(--tg-success); }
-        .media-icon-audio { background: rgba(162, 116, 201, 0.2); color: #a274c9; }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
-
-        /* Utility */
-        .text-muted { color: var(--tg-muted) !important; }
-        .text-success { color: var(--tg-success) !important; }
-        .text-warning { color: var(--tg-warning) !important; }
-        .text-danger { color: var(--tg-error) !important; }
-        .text-info { color: var(--tg-blue) !important; }
-
-        .cursor-pointer { cursor: pointer; }
-        .cursor-pointer:hover { opacity: 0.9; }
-
-        /* Tabs content */
-        .tab-content { padding: 24px 0; }
-
-        /* Auth screen */
-        .auth-card {
-            max-width: 500px;
-            margin: 0 auto;
+        .nav-pills .nav-link.active {
+            background: var(--tg-blue);
+            color: white;
         }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .stat-card h3 { font-size: 1.5rem; }
-            .table { font-size: 0.85rem; }
-            .nav-pills .nav-link { padding: 8px 12px; font-size: 0.9rem; }
+        .nav-pills .nav-link:hover {
+            color: #e4e6eb;
         }
     </style>
 </head>
 <body>
     <!-- Navbar -->
-    <nav class="navbar navbar-expand-lg navbar-dark">
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">
                 <i class="bi bi-telegram"></i> Telegrab
-                <span class="version-badge">v6.0 RAW+Meta</span>
             </a>
             <div class="d-flex align-items-center">
                 <span class="me-3">
                     <span class="status-dot" id="connectionStatus"></span>
-                    <span id="connectionText" class="small">Подключение...</span>
+                    <span id="connectionText">Подключение...</span>
                 </span>
-                <button class="btn btn-sm btn-outline-light" onclick="refreshAll()" title="Обновить">
+                <button class="btn btn-sm btn-outline-light" onclick="refreshAll()">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
             </div>
         </div>
     </nav>
 
-    <!-- Loading Screen -->
-    <div id="loadingScreen" class="loading-screen">
+    <!-- Loading indicator -->
+    <div id="loadingScreen" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #1c252e; z-index: 9999; display: flex; align-items: center; justify-content: center;">
         <div class="text-center">
-            <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;"></div>
-            <h4 class="text-light">Telegrab v6.0 загружается...</h4>
+            <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <h4 class="text-light">Telegrab загружается...</h4>
             <p class="text-muted" id="loadingStatus">Инициализация...</p>
         </div>
     </div>
 
-    <!-- Auth Screen -->
-    <div id="authScreen" class="container py-5" style="display: none;">
-        <div class="auth-card card">
-            <div class="card-body p-4">
-                <h4 class="mb-3 text-center">
-                    <i class="bi bi-telegram"></i> Telegrab v6.0
-                </h4>
-                <p class="text-muted text-center mb-4">Архитектура RAW + Meta</p>
-
-                <div id="authStatus"></div>
-
-                <form id="telegramConfigForm">
-                    <h6 class="mb-3"><i class="bi bi-key"></i> Telegram API</h6>
-                    <p class="small text-muted mb-3">
-                        Получите ключи на <a href="https://my.telegram.org" target="_blank" class="text-info">my.telegram.org</a>
-                    </p>
-
-                    <div class="mb-3">
-                        <label class="form-label">API ID *</label>
-                        <input type="number" class="form-control" id="authApiId" required placeholder="12345678">
+    <!-- Экран авторизации -->
+    <div id="authScreen" class="container-fluid py-5" style="display: none;">
+        <div class="row justify-content-center">
+            <div class="col-md-8 col-lg-5">
+                <div class="card">
+                    <div class="card-body p-4">
+                        <h4 class="mb-3 text-center"><i class="bi bi-telegram"></i> Telegrab</h4>
+                        <p class="text-muted text-center mb-4">Настройка и авторизация в Telegram</p>
+                        
+                        <div id="authStatus" class="mb-4"></div>
+                        
+                        <!-- Форма настройки Telegram -->
+                        <form id="telegramConfigForm">
+                            <h6 class="mb-3"><i class="bi bi-key"></i> Данные Telegram API</h6>
+                            <p class="small text-muted">
+                                Получите API ключи на <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>
+                            </p>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">API ID <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="authApiId" required placeholder="12345678">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">API Hash <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="authApiHash" required placeholder="abcdef1234567890abcdef1234567890">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Номер телефона <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="authPhone" required placeholder="+79991234567">
+                            </div>
+                            
+                            <button type="submit" class="btn btn-tg w-100 mb-3">
+                                <i class="bi bi-save"></i> Сохранить и продолжить
+                            </button>
+                        </form>
+                        
+                        <hr class="my-4">
+                        
+                        <!-- Кнопка QR авторизации -->
+                        <div id="qrAuthSection" style="display: none;">
+                            <button class="btn btn-tg w-100 btn-lg" onclick="showQrAuth()">
+                                <i class="bi bi-qr-code"></i> Авторизоваться по QR-коду
+                            </button>
+                            
+                            <p class="small text-muted mt-3 text-center">
+                                Отсканируйте QR-код приложением Telegram:<br>
+                                <strong>Настройки → Устройства → Подключить устройство</strong>
+                            </p>
+                        </div>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">API Hash *</label>
-                        <input type="text" class="form-control" id="authApiHash" required placeholder="abcdef1234567890...">
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Телефон *</label>
-                        <input type="text" class="form-control" id="authPhone" required placeholder="+79991234567">
-                    </div>
-
-                    <button type="submit" class="btn btn-tg w-100 mb-3">
-                        <i class="bi bi-save"></i> Сохранить и продолжить
-                    </button>
-                </form>
-
-                <hr class="my-4">
-
-                <div id="qrAuthSection" style="display: none;">
-                    <button class="btn btn-tg w-100 btn-lg" onclick="showQrAuth()">
-                        <i class="bi bi-qr-code"></i> Авторизоваться по QR-коду
-                    </button>
-                    <p class="small text-muted mt-3 text-center">
-                        Настройки → Устройства → Подключить устройство
-                    </p>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Main Interface -->
     <div class="container-fluid py-4" id="mainInterface" style="display: none;">
         <div class="row g-4">
             <!-- Sidebar -->
@@ -414,20 +334,8 @@
                             <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#messages">
                                 <i class="bi bi-envelope me-2"></i> Сообщения
                             </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#media">
-                                <i class="bi bi-image me-2"></i> Медиа
-                            </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#chats">
-                                <i class="bi bi-people me-2"></i> Чаты
-                            </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#deleted">
-                                <i class="bi bi-trash me-2"></i> Удалённые
-                            </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#search">
-                                <i class="bi bi-search me-2"></i> Поиск
-                            </button>
-                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#export">
-                                <i class="bi bi-download me-2"></i> Экспорт
+                            <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#tasks">
+                                <i class="bi bi-list-task me-2"></i> Задачи
                             </button>
                             <button class="nav-link text-start" data-bs-toggle="pill" data-bs-target="#settings">
                                 <i class="bi bi-gear me-2"></i> Настройки
@@ -437,10 +345,10 @@
                 </div>
             </div>
 
-            <!-- Content -->
+            <!-- Main Content -->
             <div class="col-lg-10">
                 <div class="tab-content">
-                    <!-- Dashboard -->
+                    <!-- Dashboard Tab -->
                     <div class="tab-pane fade show active" id="dashboard">
                         <div class="row g-4 mb-4">
                             <div class="col-md-3">
@@ -467,7 +375,7 @@
                                                 <h3 class="mb-0" id="totalChats">0</h3>
                                             </div>
                                             <div class="stat-icon" style="background: rgba(63, 185, 80, 0.2);">
-                                                <i class="bi bi-people" style="color: var(--tg-success);"></i>
+                                                <i class="bi bi-people" style="color: #3fb950;"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -478,11 +386,11 @@
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <div>
-                                                <h6 class="text-muted mb-1">Файлов</h6>
-                                                <h3 class="mb-0" id="totalFiles">0</h3>
+                                                <h6 class="text-muted mb-1">Загружено</h6>
+                                                <h3 class="mb-0" id="fullyLoadedChats">0</h3>
                                             </div>
                                             <div class="stat-icon" style="background: rgba(210, 153, 34, 0.2);">
-                                                <i class="bi bi-file-earmark" style="color: var(--tg-warning);"></i>
+                                                <i class="bi bi-check-circle" style="color: #d29922;"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -493,11 +401,11 @@
                                     <div class="card-body">
                                         <div class="d-flex justify-content-between align-items-center">
                                             <div>
-                                                <h6 class="text-muted mb-1">Редактирований</h6>
-                                                <h3 class="mb-0" id="totalEdits">0</h3>
+                                                <h6 class="text-muted mb-1">В очереди</h6>
+                                                <h3 class="mb-0" id="queueSize">0</h3>
                                             </div>
-                                            <div class="stat-icon" style="background: rgba(162, 116, 201, 0.2);">
-                                                <i class="bi bi-pencil" style="color: #a274c9;"></i>
+                                            <div class="stat-icon" style="background: rgba(248, 81, 73, 0.2);">
+                                                <i class="bi bi-clock-history" style="color: #f85149;"></i>
                                             </div>
                                         </div>
                                     </div>
@@ -505,52 +413,105 @@
                             </div>
                         </div>
 
-                        <!-- Activity Log -->
+                        <!-- Recent Activity -->
                         <div class="card mb-4">
                             <div class="card-header">
                                 <i class="bi bi-activity"></i> Активность
                             </div>
                             <div class="card-body">
                                 <div class="log-terminal" id="activityLog">
-                                    <div class="log-entry log-info">🚀 Telegrab v6.0 запущен...</div>
+                                    <div class="log-entry log-info">🚀 Telegrab запущен...</div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Quick Stats -->
+                        <!-- Чаты Telegram -->
                         <div class="card">
                             <div class="card-header">
-                                <i class="bi bi-graph-up"></i> Статистика v6.0
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="bi bi-chat-left-text"></i> Чаты Telegram</h5>
+                                    <button class="btn btn-sm btn-tg" onclick="loadChats()">
+                                        <i class="bi bi-arrow-clockwise"></i> Обновить
+                                    </button>
+                                </div>
                             </div>
                             <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="text-muted">Архитектура:</span>
-                                            <strong>RAW + Meta</strong>
+                                <!-- Фильтры -->
+                                <div class="row g-3 mb-4">
+                                    <div class="col-md-12">
+                                        <div class="d-flex gap-3 flex-wrap">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="filterChannels" checked onchange="applyChatFilters()">
+                                                <label class="form-check-label" for="filterChannels">
+                                                    <i class="bi bi-megaphone text-info"></i> Каналы
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="filterGroups" checked onchange="applyChatFilters()">
+                                                <label class="form-check-label" for="filterGroups">
+                                                    <i class="bi bi-people text-success"></i> Группы
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="filterPrivate" checked onchange="applyChatFilters()">
+                                                <label class="form-check-label" for="filterPrivate">
+                                                    <i class="bi bi-person text-secondary"></i> Личные
+                                                </label>
+                                            </div>
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="filterLoaded" onchange="applyChatFilters()">
+                                                <label class="form-check-label" for="filterLoaded">
+                                                    <i class="bi bi-check-circle text-warning"></i> Загруженные
+                                                </label>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-6">
-                                        <div class="d-flex justify-content-between">
-                                            <span class="text-muted">Удалённых сообщений:</span>
-                                            <strong id="deletedCount">0</strong>
+                                    <div class="col-md-12">
+                                        <div class="input-group">
+                                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                            <input type="text" class="form-control" id="chatSearchInput" placeholder="Поиск чатов..." onkeyup="applyChatFilters()">
                                         </div>
                                     </div>
+                                </div>
+
+                                <!-- Таблица чатов -->
+                                <div class="table-responsive">
+                                    <table class="table table-dark table-hover">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 40%">Чат</th>
+                                                <th style="width: 10%">Тип</th>
+                                                <th style="width: 15%">Сообщений</th>
+                                                <th style="width: 20%">Последнее</th>
+                                                <th style="width: 15%">Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="chatsTable">
+                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Информация -->
+                                <div class="text-muted small mt-3">
+                                    <span id="chatsCount">0 чатов</span>
+                                    <span class="mx-2">|</span>
+                                    <span id="loadedCount">0 загружено</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Messages -->
+                    <!-- Messages Tab -->
                     <div class="tab-pane fade" id="messages">
                         <div class="card">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <span><i class="bi bi-envelope"></i> Сообщения</span>
                                 <div class="d-flex gap-2">
-                                    <select class="form-select form-select-sm" id="messageChatFilter" style="width: 200px;" onchange="loadMessages()">
+                                    <select class="form-select form-select-sm" id="messageChatFilter" onchange="loadMessages()">
                                         <option value="">Все чаты</option>
                                     </select>
-                                    <input type="text" class="form-control form-control-sm" id="messageSearch" placeholder="Поиск..." onkeyup="loadMessages()" style="width: 200px;">
+                                    <input type="text" class="form-control form-control-sm" id="messageSearch" placeholder="Поиск..." onkeyup="loadMessages()">
                                 </div>
                             </div>
                             <div class="card-body p-0">
@@ -558,21 +519,19 @@
                                     <table class="table table-dark table-hover mb-0">
                                         <thead>
                                             <tr>
-                                                <th style="width: 80px;">ID</th>
+                                                <th>Чат</th>
                                                 <th>Сообщение</th>
-                                                <th style="width: 150px;">Отправитель</th>
-                                                <th style="width: 100px;">Медиа</th>
-                                                <th style="width: 150px;">Дата</th>
-                                                <th style="width: 80px;">Действия</th>
+                                                <th>Отправитель</th>
+                                                <th>Дата</th>
                                             </tr>
                                         </thead>
                                         <tbody id="messagesTable">
-                                            <tr><td colspan="6" class="text-center">Загрузка...</td></tr>
+                                            <tr><td colspan="4" class="text-center">Загрузка...</td></tr>
                                         </tbody>
                                     </table>
                                 </div>
                                 <div class="p-3 d-flex justify-content-between align-items-center">
-                                    <span class="text-muted small" id="messagesCount">0 сообщений</span>
+                                    <span class="text-muted" id="messagesCount">0 сообщений</span>
                                     <nav>
                                         <ul class="pagination pagination-sm mb-0" id="messagesPagination"></ul>
                                     </nav>
@@ -581,180 +540,118 @@
                         </div>
                     </div>
 
-                    <!-- Media -->
-                    <div class="tab-pane fade" id="media">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span><i class="bi bi-image"></i> Медиа файлы</span>
-                                <select class="form-select form-select-sm" id="mediaTypeFilter" style="width: 150px;" onchange="loadMedia()">
-                                    <option value="">Все типы</option>
-                                    <option value="photo">Фото</option>
-                                    <option value="video">Видео</option>
-                                    <option value="document">Документы</option>
-                                    <option value="audio">Аудио</option>
-                                    <option value="voice">Голосовые</option>
-                                    <option value="sticker">Стикеры</option>
-                                    <option value="gif">GIF</option>
-                                </select>
-                            </div>
-                            <div class="card-body">
-                                <div class="row g-3" id="mediaGrid">
-                                    <div class="text-center text-muted py-5">Загрузка...</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Chats -->
-                    <div class="tab-pane fade" id="chats">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <span><i class="bi bi-people"></i> Чаты</span>
-                                <button class="btn btn-sm btn-tg" onclick="loadChats()">
-                                    <i class="bi bi-arrow-clockwise"></i> Обновить
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-dark table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>Чат</th>
-                                                <th>Тип</th>
-                                                <th>Сообщений</th>
-                                                <th>Последнее</th>
-                                                <th>Действия</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="chatsTable">
-                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Deleted -->
-                    <div class="tab-pane fade" id="deleted">
+                    <!-- Tasks Tab -->
+                    <div class="tab-pane fade" id="tasks">
                         <div class="card">
                             <div class="card-header">
-                                <i class="bi bi-trash"></i> Удалённые сообщения
+                                <i class="bi bi-list-task"></i> Очередь задач
                             </div>
                             <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-dark table-hover">
-                                        <thead>
-                                            <tr>
-                                                <th>ID</th>
-                                                <th>Чат</th>
-                                                <th>Сообщение</th>
-                                                <th>Отправитель</th>
-                                                <th>Удалено</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="deletedTable">
-                                            <tr><td colspan="5" class="text-center">Загрузка...</td></tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Search -->
-                    <div class="tab-pane fade" id="search">
-                        <div class="card">
-                            <div class="card-header">
-                                <i class="bi bi-search"></i> Поиск по сообщениям
-                            </div>
-                            <div class="card-body">
-                                <div class="input-group mb-3">
-                                    <input type="text" class="form-control" id="searchQuery" placeholder="Введите поисковый запрос..." onkeypress="if(event.key==='Enter')performSearch()">
-                                    <button class="btn btn-tg" onclick="performSearch()">
-                                        <i class="bi bi-search"></i> Поиск
+                                <div class="d-flex justify-content-between mb-3">
+                                    <div>
+                                        <span class="me-3">Статус: <strong id="taskProcessingStatus">Ожидание</strong></span>
+                                        <span>В очереди: <strong id="taskQueueSize">0</strong></span>
+                                    </div>
+                                    <button class="btn btn-sm btn-outline-light" onclick="refreshQueue()">
+                                        <i class="bi bi-arrow-clockwise"></i>
                                     </button>
                                 </div>
-                                <div id="searchResults"></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Export -->
-                    <div class="tab-pane fade" id="export">
-                        <div class="card">
-                            <div class="card-header">
-                                <i class="bi bi-download"></i> Экспорт данных
-                            </div>
-                            <div class="card-body">
-                                <div class="row g-3">
-                                    <div class="col-md-6">
-                                        <label class="form-label">Выберите чат</label>
-                                        <select class="form-select" id="exportChatSelect">
-                                            <option value="">Загрузка...</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label class="form-label">Формат</label>
-                                        <select class="form-select" id="exportFormat">
-                                            <option value="json">JSON (красивый)</option>
-                                            <option value="raw">RAW JSON (полные данные)</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-12">
-                                        <button class="btn btn-tg" onclick="exportData()">
-                                            <i class="bi bi-download"></i> Экспортировать
-                                        </button>
-                                    </div>
+                                <div id="tasksList">
+                                    <div class="text-center text-muted py-5">Нет активных задач</div>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Settings -->
+                    <!-- Settings Tab -->
                     <div class="tab-pane fade" id="settings">
                         <div class="card">
-                            <div class="card-header">
-                                <i class="bi bi-gear"></i> Настройки
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <span><i class="bi bi-gear"></i> Настройки</span>
+                                <div id="telegramStatus">
+                                    <span class="badge bg-warning">⚠️ Требуется настройка Telegram</span>
+                                </div>
                             </div>
                             <div class="card-body">
-                                <h6 class="mb-3">Информация о системе</h6>
-                                <div class="row g-3 mb-4">
-                                    <div class="col-md-6">
-                                        <div class="card bg-transparent">
-                                            <div class="card-body">
-                                                <div class="d-flex justify-content-between">
-                                                    <span class="text-muted">Версия:</span>
-                                                    <strong>6.0.0</strong>
-                                                </div>
-                                                <div class="d-flex justify-content-between">
-                                                    <span class="text-muted">Архитектура:</span>
-                                                    <strong>RAW + Meta</strong>
-                                                </div>
+                                <form id="settingsForm">
+                                    <h6 class="mb-3"><i class="bi bi-telegram"></i> Telegram API</h6>
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-4">
+                                            <label class="form-label">API ID</label>
+                                            <input type="text" class="form-control" id="settingApiId" placeholder="12345678">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">API Hash</label>
+                                            <input type="text" class="form-control" id="settingApiHash" placeholder="abcdef1234567890...">
+                                        </div>
+                                        <div class="col-md-4">
+                                            <label class="form-label">Phone</label>
+                                            <input type="text" class="form-control" id="settingPhone" placeholder="+79991234567">
+                                        </div>
+                                    </div>
+                                    <div class="alert alert-info" role="alert">
+                                        <i class="bi bi-info-circle"></i> Получите API ключи на <a href="https://my.telegram.org" target="_blank">my.telegram.org</a>
+                                    </div>
+
+                                    <h6 class="mb-3"><i class="bi bi-key"></i> Аутентификация</h6>
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-6">
+                                            <label class="form-label">API Key</label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control" id="settingApiKey" readonly>
+                                                <button class="btn btn-outline-light" type="button" onclick="copyApiKey()">
+                                                    <i class="bi bi-clipboard"></i>
+                                                </button>
                                             </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <hr>
+                                    <h6 class="mb-3"><i class="bi bi-sliders"></i> Параметры загрузки</h6>
+                                    <div class="alert alert-info" role="alert">
+                                        <i class="bi bi-info-circle"></i> 
+                                        <strong>Лимиты Telegram API:</strong>
+                                        <ul class="mb-0 mt-2 small">
+                                            <li>Максимум 500 сообщений в одном запросе (рекомендуется 100)</li>
+                                            <li>Максимум 30-50 запросов в секунду (рекомендуется 1-2 для безопасности)</li>
+                                            <li>При превышении лимитов возможна временная блокировка (FLOOD_WAIT)</li>
+                                            <li>Дневной лимит: ~100,000 сообщений</li>
+                                        </ul>
+                                    </div>
+                                    <div class="row g-3 mb-4">
+                                        <div class="col-md-3">
+                                            <label class="form-label">Запросов в секунду</label>
+                                            <input type="number" class="form-control" id="settingRequestsPerSecond" value="1" min="1" max="10">
+                                            <small class="text-muted">Рекомендуется: 1-2</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">Сообщений за запрос</label>
+                                            <input type="number" class="form-control" id="settingMessagesPerRequest" value="100" min="1" max="500">
+                                            <small class="text-muted">Максимум: 500</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">Лимит истории</label>
+                                            <input type="number" class="form-control" id="settingHistoryLimit" value="200" min="0" placeholder="0 = без лимита">
+                                            <small class="text-muted">0 = загрузить все сообщения</small>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <label class="form-label">Макс. чатов</label>
+                                            <input type="number" class="form-control" id="settingMaxChats" value="20">
+                                        </div>
+                                    </div>
 
-                                <h6 class="mb-3">API доступ</h6>
-                                <div class="mb-3">
-                                    <label class="form-label">API Key</label>
-                                    <div class="input-group">
-                                        <input type="password" class="form-control" id="apiKeyDisplay" readonly value="***">
-                                        <button class="btn btn-outline-secondary" onclick="toggleApiKey()">
-                                            <i class="bi bi-eye"></i>
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-tg">
+                                            <i class="bi bi-save"></i> Сохранить и перезапустить
+                                        </button>
+                                        <button type="button" class="btn btn-outline-light" onclick="restartTelegram()">
+                                            <i class="bi bi-arrow-clockwise"></i> Перезапустить Telegram
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" onclick="checkTelegramStatus()">
+                                            <i class="bi bi-activity"></i> Проверить статус
                                         </button>
                                     </div>
-                                </div>
-
-                                <hr>
-
-                                <h6 class="mb-3">Опасные операции</h6>
-                                <button class="btn btn-outline-danger" onclick="clearCache()">
-                                    <i class="bi bi-trash"></i> Очистить кэш
-                                </button>
+                                    <div id="restartStatus" class="mt-3"></div>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -763,33 +660,81 @@
         </div>
     </div>
 
-    <!-- Message Detail Modal -->
-    <div class="modal fade" id="messageModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+    <!-- Join Chat Modal -->
+    <div class="modal fade" id="joinChatModal" tabindex="-1">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Сообщение #<span id="modalMessageId"></span></h5>
+                    <h5 class="modal-title"><i class="bi bi-person-plus"></i> Вступить в чат</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="messageModalContent"></div>
-                    
-                    <hr class="my-3">
-                    
-                    <h6>RAW данные</h6>
-                    <div class="json-viewer" id="modalRawData"></div>
-                    
-                    <hr class="my-3">
-                    
-                    <h6>История редактирований</h6>
-                    <div id="modalEdits"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Ссылка или username чата</label>
+                        <input type="text" class="form-control" id="joinChatInput" placeholder="@username или https://t.me/...">
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="joinAndLoad" checked>
+                        <label class="form-check-label">Загрузить историю после вступления</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-tg" onclick="joinChat()">Вступить</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
+    <!-- Load History Modal -->
+    <div class="modal fade" id="loadHistoryModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-download"></i> Загрузить историю</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Количество сообщений</label>
+                        <input type="number" class="form-control" id="loadHistoryLimit" placeholder="0 = все доступные">
+                    </div>
+                    <input type="hidden" id="loadHistoryChatId">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-tg" onclick="confirmLoadHistory()">Загрузить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QR Authorization Modal -->
+    <div class="modal fade" id="qrAuthModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-qr-code"></i> Авторизация в Telegram</h5>
+                </div>
+                <div class="modal-body text-center">
+                    <div id="qrAuthContent">
+                        <div class="spinner-border text-primary mb-3" role="status">
+                            <span class="visually-hidden">Загрузка...</span>
+                        </div>
+                        <p>Загрузка QR-кода...</p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-light" onclick="checkQrStatus()">
+                        <i class="bi bi-arrow-clockwise"></i> Проверить
+                    </button>
+                    <button type="button" class="btn btn-tg" data-bs-dismiss="modal">Закрыть</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/app.js?v=6.0.0"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>

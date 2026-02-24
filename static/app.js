@@ -1,90 +1,113 @@
-// Telegrab v6.0 Web UI Client
-// Архитектура RAW + Meta
+// Telegrab Web UI - Client Script
 
 const API_BASE = '';
-const API_V6_BASE = '/v6';
 let apiKey = localStorage.getItem('telegrab_api_key') || '';
 let ws = null;
 let messagePage = 0;
 const MESSAGES_PER_PAGE = 50;
-let allChatsData = [];
+let qrCheckInterval = null;
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Telegrab v6.0 UI загружен');
+    console.log('🚀 Telegrab UI загружен');
     updateLoadingStatus('Проверка соединения...');
-
+    
+    // Проверяем что Bootstrap загрузился
     if (typeof bootstrap === 'undefined') {
         console.error('❌ Bootstrap не загружен!');
-        document.getElementById('loadingStatus').textContent = 'Ошибка: Bootstrap не загружен';
+        document.getElementById('loadingStatus').textContent = 'Ошибка: Bootstrap не загружен. Проверьте соединение.';
         document.getElementById('loadingStatus').className = 'text-danger';
         return;
     }
-
+    
     checkAuthStatus();
     initWebSocket();
-    setInterval(refreshAll, 30000);
+    setInterval(refreshAll, 30000); // Автообновление каждые 30 сек
 });
 
+// Обновление статуса загрузки
 function updateLoadingStatus(message) {
-    const el = document.getElementById('loadingStatus');
-    if (el) el.textContent = message;
+    const statusEl = document.getElementById('loadingStatus');
+    if (statusEl) {
+        statusEl.textContent = message;
+    }
     console.log('📋', message);
 }
 
-// Проверка авторизации
+// Проверка статуса авторизации
 async function checkAuthStatus() {
-    console.log('🔐 Проверка авторизации...');
+    console.log('🔐 Проверка статуса авторизации...');
     try {
         updateLoadingStatus('Проверка авторизации...');
         const status = await apiRequest('/telegram_status');
-        console.log('📦 Статус:', status);
-
+        console.log('📦 Статус авторизации:', status);
+        
         if (status.connected && status.user_id) {
+            // Авторизован - показываем интерфейс
+            console.log('✅ Пользователь авторизован:', status.first_name);
             updateLoadingStatus('Загрузка данных...');
+            
+            // Скрываем экран загрузки
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('authScreen').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
-
-            loadV6Stats();
+            
+            loadStats();
             loadChats();
             loadSettings();
         } else {
-            showAuthScreen();
+            // Не авторизован - показываем экран авторизации
+            console.log('⚠️  Требуется авторизация');
+            updateLoadingStatus('Требуется авторизация...');
+            
+            // Скрываем экран загрузки, показываем авторизацию
+            setTimeout(() => {
+                document.getElementById('loadingScreen').style.display = 'none';
+                document.getElementById('authScreen').style.display = 'block';
+                document.getElementById('mainInterface').style.display = 'none';
+            }, 500);
+            
+            // Проверяем есть ли конфигурация
             await checkTelegramConfig();
         }
     } catch (e) {
-        console.error('❌ Ошибка:', e);
-        updateLoadingStatus('Ошибка подключения');
+        console.error('❌ Ошибка проверки авторизации:', e);
+        updateLoadingStatus('Ошибка подключения к серверу');
         document.getElementById('loadingStatus').className = 'text-danger';
+        
+        // Показываем ошибку через 2 секунды
         setTimeout(() => {
             document.getElementById('loadingScreen').style.display = 'none';
-            showAuthScreen();
+            document.getElementById('authScreen').style.display = 'block';
+            document.getElementById('mainInterface').style.display = 'none';
+            
+            const authStatus = document.getElementById('authStatus');
+            if (authStatus) {
+                authStatus.innerHTML = `<div class="alert alert-danger">Ошибка подключения: ${escapeHtml(e.message)}<br><small>Проверьте что сервер запущен</small></div>`;
+            }
         }, 1000);
+        
         await checkTelegramConfig();
     }
 }
 
-function showAuthScreen() {
-    document.getElementById('authScreen').style.display = 'block';
-    document.getElementById('mainInterface').style.display = 'none';
-}
-
+// Проверка конфигурации Telegram
 async function checkTelegramConfig() {
     try {
         const config = await apiRequest('/config');
-        if (config.API_ID && config.API_ID !== 0) {
+        
+        // Если конфигурация заполнена - показываем QR секцию
+        if (config.API_ID && config.API_HASH && config.PHONE && 
+            config.API_ID !== 0 && config.PHONE !== '+0000000000') {
             document.getElementById('qrAuthSection').style.display = 'block';
             document.getElementById('telegramConfigForm').style.display = 'none';
         }
-    } catch (e) {}
+    } catch (e) {
+        console.log('Конфигурация не загружена');
+    }
 }
 
-// Пустые функции для совместимости
-function loadSettings() {}
-function refreshQueue() {}
-
-// WebSocket
+// WebSocket для real-time обновлений
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -100,8 +123,8 @@ function initWebSocket() {
     ws.onclose = () => {
         document.getElementById('connectionStatus').className = 'status-dot status-offline';
         document.getElementById('connectionText').textContent = 'Отключено';
-        addLog('Переподключение...', 'warning');
-        setTimeout(initWebSocket, 3000);
+        addLog('WebSocket отключён. Переподключение...', 'warning');
+        setTimeout(initWebSocket, 3000); // Переподключение
     };
 
     ws.onerror = (e) => {
@@ -114,47 +137,76 @@ function initWebSocket() {
             const data = JSON.parse(event.data);
             handleWebSocketMessage(data);
         } catch (e) {
-            console.error('Parse error:', e);
+            console.error('Failed to parse WS message:', e);
         }
     };
 }
 
 function handleWebSocketMessage(data) {
-    console.log('📡 WS:', data);
-
+    console.log('📡 WebSocket сообщение:', data);
+    
     switch (data.type) {
         case 'task_completed':
+            console.log('✅ Задача завершена:', data.task);
             addLog(`Задача ${data.task.id} завершена`, 'success');
             refreshQueue();
-            loadV6Stats();
+            loadStats();
+            // Если задача была на загрузку истории — обновляем чаты
+            if (data.task.type === 'load_history' || data.task.type === 'load_missed') {
+                // Находим чат в кэше и обновляем
+                const chatId = data.task.data?.chat_id;
+                if (chatId && allChatsData) {
+                    const chat = allChatsData.find(c => c.id == chatId);
+                    if (chat) {
+                        loadChats(); // Полное обновление
+                    }
+                }
+            }
             break;
-
+            
         case 'new_message':
+            console.log('📩 Новое сообщение:', data.message);
             addLog(`Новое сообщение в ${data.message.chat_title}`, 'info');
-            loadV6Stats();
+            loadStats();
+            // Обновляем таблицу сообщений если она открыта
             if (document.getElementById('messages')?.classList.contains('active')) {
                 loadMessages();
             }
+            // Обновляем кэш чатов (новое сообщение = чат активен)
+            if (allChatsData && data.message.chat_id) {
+                const chat = allChatsData.find(c => c.id == data.message.chat_id);
+                if (chat) {
+                    chat.message_count = (chat.message_count || 0) + 1;
+                    chat.last_message_date = data.message.message_date;
+                    applyChatFilters(); // Плавное обновление
+                }
+            }
             break;
-
+            
         case 'chat_loaded':
-            addLog(`Чат "${data.chat_title}": ${data.new_messages} сообщений`, 'success');
+            console.log('📚 Чат загружен:', data);
+            addLog(`Чат "${data.chat_title}": загружено ${data.new_messages} сообщений`, 'success');
+            loadChats(); // Обновляем таблицу
+            loadStats();
+            break;
+            
+        case 'missed_loaded':
+            console.log('🔍 Пропущенные загружены:', data);
+            addLog(`Загружено ${data.count} пропущенных сообщений`, 'info');
             loadChats();
-            loadV6Stats();
+            loadStats();
             break;
-
-        case 'message_edited':
-            addLog(`Сообщение ${data.message.message_id} отредактировано`, 'warning');
+            
+        case 'loading_progress':
+            console.log('📊 Прогресс загрузки:', data);
             break;
-
-        case 'message_deleted':
-            addLog(`Сообщение ${data.message_id} удалено`, 'error');
-            loadV6Stats();
+            
+        case 'pong':
             break;
     }
 }
 
-// API Request с retry
+// API запросы с retry
 async function apiRequest(endpoint, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
@@ -165,9 +217,10 @@ async function apiRequest(endpoint, options = {}) {
         headers['X-API-Key'] = apiKey;
     }
 
+    // Retry logic: 3 попытки с задержкой
     const maxRetries = 3;
     let lastError = null;
-
+    
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -176,7 +229,7 @@ async function apiRequest(endpoint, options = {}) {
             });
 
             if (response.status === 401) {
-                const newKey = prompt('Требуется API ключ:');
+                const newKey = prompt('Требуется API ключ. Введите ваш API ключ:');
                 if (newKey) {
                     apiKey = newKey;
                     localStorage.setItem('telegrab_api_key', newKey);
@@ -191,101 +244,243 @@ async function apiRequest(endpoint, options = {}) {
             }
 
             return await response.json();
-
+            
         } catch (e) {
             lastError = e;
-            console.warn(`⚠️ Попытка ${attempt}: ${e.message}`);
+            console.warn(`⚠️  Попытка ${attempt} не удалась: ${e.message}`);
+            
             if (attempt < maxRetries) {
-                await new Promise(r => setTimeout(r, 500 * attempt));
+                // Ждём перед следующей попыткой
+                await new Promise(resolve => setTimeout(resolve, 500 * attempt));
             }
         }
     }
-
+    
     throw lastError;
 }
 
-// Загрузка статистики v6
-async function loadV6Stats() {
+// Загрузка статистики
+async function loadStats() {
     try {
-        const stats = await apiRequest(`${API_V6_BASE}/stats`);
-        console.log('📊 V6 Stats:', stats);
-
+        const stats = await apiRequest('/stats');
         document.getElementById('totalMessages').textContent = stats.total_messages || 0;
         document.getElementById('totalChats').textContent = stats.total_chats || 0;
-        document.getElementById('totalFiles').textContent = stats.total_files || 0;
-        document.getElementById('totalEdits').textContent = stats.total_edits || 0;
-        document.getElementById('deletedCount').textContent = stats.deleted_messages || 0;
-
+        document.getElementById('fullyLoadedChats').textContent = stats.fully_loaded_chats || 0;
+        document.getElementById('quickTotalMessages').textContent = stats.total_messages || 0;
+        document.getElementById('quickTotalChats').textContent = stats.total_chats || 0;
+        document.getElementById('quickFullyLoaded').textContent = stats.fully_loaded_chats || 0;
+        
+        const queue = await apiRequest('/queue');
+        document.getElementById('queueSize').textContent = queue.size || 0;
+        document.getElementById('taskQueueSize').textContent = queue.size || 0;
+        document.getElementById('taskProcessingStatus').textContent = queue.processing ? 'Обработка' : 'Ожидание';
     } catch (e) {
-        console.error('Failed to load v6 stats:', e);
+        console.error('Failed to load stats:', e);
     }
 }
+
+// Данные чатов (кэш для плавной фильтрации)
+let allChatsData = [];
+let chatFilterDebounce = null;
 
 // Загрузка чатов
 async function loadChats() {
     console.log('🔄 Загрузка чатов...');
     const tbody = document.getElementById('chatsTable');
-
+    
+    // Показываем индикатор загрузки только если таблица пуста
     if (allChatsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm"></div> Загрузка...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center"><div class="spinner-border spinner-border-sm" role="status"></div> Загрузка...</td></tr>';
     }
-
+    
     try {
-        const chatsData = await apiRequest(`${API_V6_BASE}/chats?limit=200`);
-        console.log('📦 Чаты:', chatsData);
+        // Загружаем диалоги из Telegram
+        const dialogsData = await apiRequest('/dialogs?limit=200&include_private=true');
+        console.log('📦 Диалоги из Telegram:', dialogsData);
+        
+        // Загружаем статистику по сообщениям из БД
+        const dbChats = await apiRequest('/chats');
+        console.log('📦 Чаты из БД:', dbChats);
+        
+        // Создаём мапу статистики с суммированием по названию
+        const chatStats = {};
+        (dbChats.chats || []).forEach(chat => {
+            const chatTitle = chat.chat_title;
+            const chatId = String(chat.chat_id);
+            
+            // Суммируем сообщения для чатов с одинаковым названием
+            if (!chatStats[chatTitle]) {
+                chatStats[chatTitle] = {
+                    message_count: 0,
+                    fully_loaded: false,
+                    ids: [] // Сохраняем все ID для этого чата
+                };
+            }
+            chatStats[chatTitle].message_count += chat.message_count || 0;
+            chatStats[chatTitle].ids.push(chatId);
+            
+            // fully_loaded = true только если все ID загружены полностью
+            if (chat.fully_loaded) {
+                chatStats[chatTitle].fully_loaded = true;
+            }
+            
+            // Добавляем альтернативный формат ID
+            if (chatId.startsWith('-100')) {
+                const altId = chatId.substring(4);
+                chatStats[chatTitle].ids.push(altId);
+            }
+        });
+        
+        console.log('📊 Статистика чатов:', chatStats);
 
-        allChatsData = chatsData.chats || [];
+        // Объединяем данные
+        allChatsData = (dialogsData.dialogs || []).map(dialog => {
+            // Пытаемся найти по title
+            let stats = chatStats[dialog.title];
+            
+            // Если не нашли, пробуем по chat_id
+            if (!stats) {
+                // Ищем чат с таким ID в статистике
+                for (const [title, data] of Object.entries(chatStats)) {
+                    if (data.ids.includes(String(dialog.id))) {
+                        stats = data;
+                        console.log(`🔍 Найдено совпадение по ID для ${dialog.title}: ${title}`);
+                        break;
+                    }
+                }
+            }
+            
+            if (!stats) {
+                stats = { message_count: 0, fully_loaded: false };
+            }
 
-        // Обновляем фильтр чатов для сообщений
-        updateChatFilter();
-        updateExportChatSelect();
+            return {
+                id: dialog.id,
+                title: dialog.title,
+                type: dialog.type,
+                message_count: stats.message_count,
+                last_message_date: dialog.last_message_date,
+                fully_loaded: stats.fully_loaded
+            };
+        });
 
-        renderChatsTable(allChatsData);
-
+        console.log(`✅ Загружено ${allChatsData.length} чатов`);
+        console.log('📊 Данные чатов:', allChatsData.map(c => `${c.title}: ${c.message_count} сообщений`).join(', '));
+        
+        // Применяем фильтры (это обновит таблицу)
+        applyChatFilters();
+        
     } catch (e) {
-        console.error('Ошибка загрузки чатов:', e);
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
+        console.error('❌ Ошибка загрузки чатов:', e);
+        
+        // Показываем более понятную ошибку
+        let errorMsg = e.message;
+        if (errorMsg.includes('Unexpected token') || errorMsg.includes('Internal Server Error')) {
+            errorMsg = 'Сервер ещё не готов. Обновите страницу через несколько секунд.';
+        }
+        
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">
+            <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(errorMsg)}
+            <br><small>Если проблема сохраняется — проверьте что сервер запущен</small>
+            <br><button class="btn btn-sm btn-tg mt-2" onclick="loadChats()">
+                <i class="bi bi-arrow-clockwise"></i> Попробовать снова
+            </button>
+        </td></tr>`;
     }
 }
 
+// Применение фильтров (с debounce для плавности)
+function applyChatFilters() {
+    // Debounce 300ms для плавной фильтрации
+    if (chatFilterDebounce) {
+        clearTimeout(chatFilterDebounce);
+    }
+    
+    chatFilterDebounce = setTimeout(() => {
+        const filtered = allChatsData.filter(chat => {
+            // Фильтр по типу
+            if (chat.type === 'channel' && !document.getElementById('filterChannels').checked) return false;
+            if (chat.type === 'group' && !document.getElementById('filterGroups').checked) return false;
+            if (chat.type === 'private' && !document.getElementById('filterPrivate').checked) return false;
+            
+            // Фильтр по загруженным
+            if (document.getElementById('filterLoaded').checked && chat.message_count === 0) return false;
+            
+            // Поиск по названию
+            const search = document.getElementById('chatSearchInput').value.toLowerCase();
+            if (search && !chat.title.toLowerCase().includes(search)) return false;
+            
+            return true;
+        });
+        
+        renderChatsTable(filtered);
+    }, 300);
+}
+
+// Отрисовка таблицы чатов
 function renderChatsTable(chats) {
     const tbody = document.getElementById('chatsTable');
-
+    
     if (chats.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Чаты не найдены</td></tr>';
+        document.getElementById('chatsCount').textContent = '0 чатов';
+        document.getElementById('loadedCount').textContent = '0 загружено';
         return;
     }
-
+    
+    // Сортировка: сначала с сообщениями, потом по дате
+    chats.sort((a, b) => {
+        if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+        return new Date(b.last_message_date || 0) - new Date(a.last_message_date || 0);
+    });
+    
     tbody.innerHTML = chats.map(chat => `
         <tr>
             <td>
                 <strong>${escapeHtml(chat.title)}</strong>
-                <br><small class="text-muted">ID: ${chat.chat_id}</small>
+                <br><small class="text-muted">ID: ${escapeHtml(chat.id)}</small>
             </td>
-            <td><span class="badge ${getTypeBadgeClass(chat.type)}">${chat.type}</span></td>
-            <td>-</td>
-            <td>${chat.updated_at ? formatDate(chat.updated_at) : '-'}</td>
             <td>
-                <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.chat_id}')" title="Загрузить">
-                    <i class="bi bi-download"></i>
-                </button>
+                <span class="badge ${getTypeBadgeClass(chat.type)}">
+                    ${getTypeName(chat.type)}
+                </span>
+            </td>
+            <td>
+                <strong>${chat.message_count}</strong>
+                ${chat.message_count > 0 ? '<br><small class="text-success">в БД</small>' : ''}
+            </td>
+            <td>
+                ${chat.last_message_date ? formatDate(chat.last_message_date) : '-'}
+            </td>
+            <td>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')" title="Загрузить историю">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearChat('${escapeJs(chat.id)}', '${escapeJs(chat.title)}')" title="Очистить чат из БД">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </td>
         </tr>
     `).join('');
+    
+    // Обновляем счётчики
+    document.getElementById('chatsCount').textContent = `${chats.length} чатов`;
+    document.getElementById('loadedCount').textContent = `${chats.filter(c => c.message_count > 0).length} загружено`;
 }
 
-function updateChatFilter() {
-    const select = document.getElementById('messageChatFilter');
-    select.innerHTML = '<option value="">Все чаты</option>' +
-        allChatsData.map(chat => `<option value="${chat.chat_id}">${escapeHtml(chat.title)}</option>`).join('');
+// Тип чата (человекочитаемый)
+function getTypeName(type) {
+    const names = {
+        'channel': 'Канал',
+        'group': 'Группа',
+        'private': 'Личный'
+    };
+    return names[type] || type;
 }
 
-function updateExportChatSelect() {
-    const select = document.getElementById('exportChatSelect');
-    select.innerHTML = '<option value="">Выберите чат</option>' +
-        allChatsData.map(chat => `<option value="${chat.chat_id}">${escapeHtml(chat.title)}</option>`).join('');
-}
-
+// Класс для бейджа типа
 function getTypeBadgeClass(type) {
     const classes = {
         'channel': 'bg-info',
@@ -295,302 +490,177 @@ function getTypeBadgeClass(type) {
     return classes[type] || 'bg-secondary';
 }
 
-// Загрузка сообщений
-async function loadMessages() {
-    const chatId = document.getElementById('messageChatFilter').value;
-    const search = document.getElementById('messageSearch').value;
-
-    console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
-
+// Добавить чат в отслеживаемые (теперь просто загружает)
+async function addTrackedChat(chatId, chatTitle, chatType) {
     try {
-        let url = `${API_V6_BASE}/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
-        if (chatId) url += `&chat_id=${chatId}`;
-        if (search) url += `&search=${encodeURIComponent(search)}`;
-
-        const data = await apiRequest(url);
-        console.log('📦 Сообщения:', data);
-
-        const tbody = document.getElementById('messagesTable');
-
-        if (data.messages && data.messages.length > 0) {
-            tbody.innerHTML = data.messages.map(msg => `
-                <tr>
-                    <td>${msg.message_id}</td>
-                    <td>
-                        ${msg.has_media ? `<span class="badge badge-media me-2"><i class="bi bi-image"></i></span>` : ''}
-                        ${escapeHtml(msg.text || '(без текста)')}
-                    </td>
-                    <td>${escapeHtml(msg.sender_name || 'Unknown')}</td>
-                    <td>${msg.media_type ? `<span class="badge badge-media">${msg.media_type}</span>` : '-'}</td>
-                    <td>${formatDate(msg.message_date)}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="viewMessage(${msg.chat_id}, ${msg.message_id})" title="Просмотр">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    </td>
-                </tr>
-            `).join('');
-
-            document.getElementById('messagesCount').textContent = `${data.count} сообщений`;
-            updatePagination(Math.ceil(data.count / MESSAGES_PER_PAGE));
-        } else {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Сообщений нет</td></tr>';
-            document.getElementById('messagesCount').textContent = '0 сообщений';
-            document.getElementById('messagesPagination').innerHTML = '';
-        }
-    } catch (e) {
-        console.error('Ошибка:', e);
-        document.getElementById('messagesTable').innerHTML = `<tr><td colspan="6" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
-    }
-}
-
-// Просмотр сообщения
-async function viewMessage(chatId, messageId) {
-    try {
-        const msg = await apiRequest(`${API_V6_BASE}/messages/${chatId}/${messageId}`);
-        console.log('📦 Сообщение:', msg);
-
-        document.getElementById('modalMessageId').textContent = messageId;
-        document.getElementById('messageModalContent').innerHTML = `
-            <p><strong>Чат:</strong> ${escapeHtml(msg.chat_title || 'Unknown')}</p>
-            <p><strong>Отправитель:</strong> ${escapeHtml(msg.sender_name || 'Unknown')}</p>
-            <p><strong>Дата:</strong> ${formatDate(msg.message_date)}</p>
-            <p><strong>Текст:</strong><br>${escapeHtml(msg.raw_data?.message || msg.text_preview || '(без текста)')}</p>
-            ${msg.has_media ? `<p><strong>Медиа:</strong> ${msg.media_type}</p>` : ''}
-            ${msg.views ? `<p><strong>Просмотров:</strong> ${msg.views}</p>` : ''}
-        `;
-
-        // RAW данные
-        document.getElementById('modalRawData').textContent = JSON.stringify(msg.raw_data, null, 2);
-
-        // История редактирований
-        loadMessageEdits(chatId, messageId);
-
-        const modal = new bootstrap.Modal(document.getElementById('messageModal'));
-        modal.show();
-
-    } catch (e) {
-        alert('Ошибка: ' + e.message);
-    }
-}
-
-async function loadMessageEdits(chatId, messageId) {
-    try {
-        const edits = await apiRequest(`${API_V6_BASE}/edits/${chatId}/${messageId}`);
-        const container = document.getElementById('modalEdits');
-
-        if (edits.edits && edits.edits.length > 0) {
-            container.innerHTML = edits.edits.map(edit => `
-                <div class="card bg-transparent mb-2">
-                    <div class="card-body py-2">
-                        <small class="text-muted">${formatDate(edit.edit_date)}</small>
-                        <div class="mt-1">
-                            <small class="text-muted">Было:</small><br>
-                            <span class="text-danger">${escapeHtml(edit.old_text || '(без текста)')}</span>
-                        </div>
-                        <div class="mt-1">
-                            <small class="text-muted">Стало:</small><br>
-                            <span class="text-success">${escapeHtml(edit.new_text || '(без текста)')}</span>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            container.innerHTML = '<p class="text-muted">Нет истории редактирований</p>';
-        }
-    } catch (e) {
-        document.getElementById('modalEdits').innerHTML = '<p class="text-muted">Нет данных</p>';
-    }
-}
-
-// Загрузка медиа
-async function loadMedia() {
-    const mediaType = document.getElementById('mediaTypeFilter').value;
-    const container = document.getElementById('mediaGrid');
-
-    try {
-        let url = `${API_V6_BASE}/media?limit=100`;
-        if (mediaType) url += `&media_type=${mediaType}`;
-
-        const data = await apiRequest(url);
-        console.log('📦 Медиа:', data);
-
-        if (data.messages && data.messages.length > 0) {
-            container.innerHTML = data.messages.map(msg => `
-                <div class="col-md-4 col-lg-3">
-                    <div class="card cursor-pointer" onclick="viewMessage(${msg.chat_id}, ${msg.message_id})">
-                        <div class="card-body">
-                            <div class="d-flex justify-content-between align-items-start mb-2">
-                                <span class="badge badge-media">${msg.media_type}</span>
-                                <small class="text-muted">#${msg.message_id}</small>
-                            </div>
-                            <p class="card-text small text-muted mb-2" style="max-height: 60px; overflow: hidden;">
-                                ${escapeHtml(msg.text_preview || '(без текста)')}
-                            </p>
-                            <small class="text-muted">${formatDate(msg.message_date)}</small>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            container.innerHTML = '<div class="col-12 text-center text-muted py-5">Медиа не найдено</div>';
-        }
-    } catch (e) {
-        container.innerHTML = `<div class="col-12 text-center text-danger">${escapeHtml(e.message)}</div>`;
-    }
-}
-
-// Поиск
-async function performSearch() {
-    const query = document.getElementById('searchQuery').value.trim();
-    const container = document.getElementById('searchResults');
-
-    if (!query) {
-        container.innerHTML = '<p class="text-muted">Введите поисковый запрос</p>';
-        return;
-    }
-
-    container.innerHTML = '<div class="text-center py-4"><div class="spinner-border"></div></div>';
-
-    try {
-        const data = await apiRequest(`${API_V6_BASE}/search?q=${encodeURIComponent(query)}&limit=50`);
-        console.log('🔍 Поиск:', data);
-
-        if (data.results && data.results.length > 0) {
-            container.innerHTML = `
-                <p class="text-muted mb-3">Найдено: ${data.count}</p>
-                <div class="table-responsive">
-                    <table class="table table-dark table-hover">
-                        <thead>
-                            <tr>
-                                <th>Чат</th>
-                                <th>Сообщение</th>
-                                <th>Дата</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.results.map(msg => `
-                                <tr class="cursor-pointer" onclick="viewMessage(${msg.chat_id}, ${msg.message_id})">
-                                    <td>${escapeHtml(msg.chat_title || 'Unknown')}</td>
-                                    <td>${highlightSearch(escapeHtml(msg.text_preview || ''), query)}</td>
-                                    <td>${formatDate(msg.message_date)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        } else {
-            container.innerHTML = '<p class="text-muted">Ничего не найдено</p>';
-        }
-    } catch (e) {
-        container.innerHTML = `<p class="text-danger">${escapeHtml(e.message)}</p>`;
-    }
-}
-
-function highlightSearch(text, query) {
-    const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
-    return text.replace(regex, '<span class="search-highlight">$1</span>');
-}
-
-function escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Удалённые сообщения
-async function loadDeleted() {
-    const tbody = document.getElementById('deletedTable');
-
-    try {
-        const data = await apiRequest(`${API_V6_BASE}/deleted?limit=100`);
-        console.log('🗑️ Удалённые:', data);
-
-        if (data.messages && data.messages.length > 0) {
-            tbody.innerHTML = data.messages.map(msg => `
-                <tr>
-                    <td>${msg.message_id}</td>
-                    <td>${escapeHtml(msg.chat_title || 'Unknown')}</td>
-                    <td>${escapeHtml(msg.text_preview || '(без текста)')}</td>
-                    <td>${escapeHtml(msg.sender_name || 'Unknown')}</td>
-                    <td>${formatDate(msg.deleted_at)}</td>
-                </tr>
-            `).join('');
-        } else {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Удалённых сообщений нет</td></tr>';
-        }
-    } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${escapeHtml(e.message)}</td></tr>`;
-    }
-}
-
-// Экспорт
-async function exportData() {
-    const chatId = document.getElementById('exportChatSelect').value;
-    const format = document.getElementById('exportFormat').value;
-
-    if (!chatId) {
-        alert('Выберите чат');
-        return;
-    }
-
-    try {
-        const data = await apiRequest(`${API_V6_BASE}/export/${chatId}?format=${format}`);
+        console.log(`📋 Загрузка чата: ${chatTitle} (${chatId})`);
         
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `telegrab_chat_${chatId}_export.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-
-        addLog('Экспорт загружен', 'success');
+        // Автоматически запускаем загрузку истории
+        console.log('🚀 Запуск загрузки истории...');
+        const config = await apiRequest('/config');
+        const historyLimit = config.HISTORY_LIMIT_PER_CHAT || 200;
+        
+        const loadResult = await apiRequest(`/load?chat_id=${chatId}&limit=${historyLimit}`, { method: 'POST' });
+        addLog(`Загрузка чата "${chatTitle}" начата: ${loadResult.task_id}`, 'info');
+        
+        // Обновляем таблицу через 3 секунды (когда начнётся загрузка)
+        setTimeout(() => {
+            loadChats();
+        }, 3000);
+        
+        refreshQueue();
     } catch (e) {
-        alert('Ошибка экспорта: ' + e.message);
+        console.error('Ошибка загрузки:', e);
+        alert('Ошибка загрузки чата: ' + e.message);
     }
 }
 
 // Загрузка истории чата
 async function loadChatHistory(chatId) {
+    console.log('📥 Загрузка истории чата:', chatId);
     try {
-        const result = await apiRequest(`${API_BASE}/load?chat_id=${chatId}&limit=200`, { method: 'POST' });
-        addLog(`Загрузка чата ${chatId} начата: ${result.task_id}`, 'info');
+        // Получаем настройки из конфига
+        const config = await apiRequest('/config');
+        const historyLimit = config.HISTORY_LIMIT_PER_CHAT || 200;
+        
+        console.log('📡 Запрос к API /load с лимитом:', historyLimit);
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=${historyLimit}`, { method: 'POST' });
+        console.log('✅ Результат:', result);
+        addLog(`Загрузка истории начата: ${result.task_id} (лимит: ${historyLimit})`, 'info');
+        console.log('🔄 Обновление очереди задач...');
         refreshQueue();
     } catch (e) {
+        console.error('❌ Ошибка загрузки:', e);
         alert('Ошибка: ' + e.message);
     }
 }
 
-// Утилиты
+// Очистка чата из БД
+async function clearChat(chatId, chatTitle) {
+    if (!confirm(`Вы уверены что хотите очистить чат "${chatTitle}" из базы данных?\n\nВсе сообщения этого чата будут удалены.\n\nЭто действие необратимо!`)) return;
+    
+    try {
+        console.log('🗑️ Очистка чата:', chatId);
+        const result = await apiRequest(`/clear_chat/${chatId}`, { method: 'POST' });
+        console.log('✅ Результат:', result);
+        addLog(`Чат "${chatTitle}" очищен: удалено ${result.deleted} сообщений`, 'success');
+        
+        // Перезагружаем таблицу
+        await loadChats();
+    } catch (e) {
+        console.error('❌ Ошибка очистки:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Запуск обработчика задач
+async function startWorker() {
+    try {
+        const result = await apiRequest('/start_worker', { method: 'POST' });
+        addLog(result.message, 'success');
+        refreshQueue();
+    } catch (e) {
+        console.error('Ошибка запуска:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Загрузка сообщений
+async function loadMessages() {
+    const chatId = document.getElementById('messageChatFilter').value;
+    const search = document.getElementById('messageSearch').value;
+    
+    console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
+
+    try {
+        // Сначала получаем общее количество
+        const statsUrl = `/stats`;
+        const stats = await apiRequest(statsUrl);
+        const totalMessages = stats.total_messages || 0;
+        
+        let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
+        if (chatId) url += `&chat_id=${chatId}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        
+        console.log('📡 Запрос к API:', url);
+        const data = await apiRequest(url);
+        console.log('📦 Сообщения из API:', data);
+        
+        const tbody = document.getElementById('messagesTable');
+
+        if (data.messages && data.messages.length > 0) {
+            console.log(`✅ Загружено ${data.messages.length} сообщений (страница ${messagePage + 1})`);
+            tbody.innerHTML = data.messages.map(msg => `
+                <tr>
+                    <td style="white-space: nowrap;">${escapeHtml(msg.chat_title || 'Unknown')}</td>
+                    <td style="max-width: 600px; white-space: normal; word-wrap: break-word;">
+                        ${escapeHtml(msg.text || '(без текста)')}
+                    </td>
+                    <td style="white-space: nowrap;">${escapeHtml(msg.sender_name || 'Unknown')}</td>
+                    <td style="white-space: nowrap;">${formatDate(msg.message_date)}</td>
+                </tr>
+            `).join('');
+            
+            // Обновляем счётчик
+            const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
+            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages} (всего: ${totalMessages} сообщений)`;
+            
+            // Обновляем пагинацию
+            updatePagination(totalPages);
+        } else {
+            console.log('⚠️  Нет сообщений');
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
+            document.getElementById('messagesCount').textContent = '0 сообщений';
+            document.getElementById('messagesPagination').innerHTML = '';
+        }
+    } catch (e) {
+        console.error('❌ Ошибка загрузки сообщений:', e);
+        console.error('Stack:', e.stack);
+        document.getElementById('messagesTable').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Ошибка: ${escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+// Обновление пагинации
 function updatePagination(totalPages) {
     const pagination = document.getElementById('messagesPagination');
     if (totalPages <= 1) {
         pagination.innerHTML = '';
         return;
     }
-
-    let html = `<li class="page-item ${messagePage === 0 ? 'disabled' : ''}">
-        <a class="page-link" href="#" onclick="prevPage(); return false;"><i class="bi bi-chevron-left"></i></a>
+    
+    let html = '';
+    
+    // Кнопка "Назад"
+    html += `<li class="page-item ${messagePage === 0 ? 'disabled' : ''}">
+        <a class="page-link" href="#" onclick="prevPage(); return false;">
+            <i class="bi bi-chevron-left"></i>
+        </a>
     </li>`;
-
+    
+    // Номера страниц
     for (let i = Math.max(0, messagePage - 2); i <= Math.min(totalPages - 1, messagePage + 2); i++) {
         html += `<li class="page-item ${i === messagePage ? 'active' : ''}">
             <a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i + 1}</a>
         </li>`;
     }
-
+    
+    // Кнопка "Вперёд"
     html += `<li class="page-item ${messagePage >= totalPages - 1 ? 'disabled' : ''}">
-        <a class="page-link" href="#" onclick="nextPage(); return false;"><i class="bi bi-chevron-right"></i></a>
+        <a class="page-link" href="#" onclick="nextPage(); return false;">
+            <i class="bi bi-chevron-right"></i>
+        </a>
     </li>`;
-
+    
     pagination.innerHTML = html;
 }
 
+// Переход на страницу
 function goToPage(page) {
     messagePage = page;
     loadMessages();
 }
 
+// Предыдущая страница
 function prevPage() {
     if (messagePage > 0) {
         messagePage--;
@@ -598,41 +668,328 @@ function prevPage() {
     }
 }
 
+// Следующая страница
 function nextPage() {
     messagePage++;
     loadMessages();
 }
 
-function refreshAll() {
-    loadV6Stats();
-    loadChats();
-    if (document.getElementById('messages')?.classList.contains('active')) {
-        loadMessages();
+// Загрузка настроек
+async function loadSettings() {
+    try {
+        // Получаем текущие значения из API /config
+        const config = await apiRequest('/config');
+        console.log('📋 Загрузка настроек:', config);
+
+        // Заполняем форму Telegram API
+        document.getElementById('settingApiId').value = config.API_ID || '';
+        document.getElementById('settingApiHash').value = config.API_HASH || '';
+        document.getElementById('settingPhone').value = config.PHONE || '';
+        
+        // API Key
+        document.getElementById('settingApiKey').value = apiKey || 'Не установлен';
+        
+        // Параметры загрузки
+        document.getElementById('settingRequestsPerSecond').value = config.REQUESTS_PER_SECOND || 1;
+        document.getElementById('settingMessagesPerRequest').value = config.MESSAGES_PER_REQUEST || 100;
+        document.getElementById('settingHistoryLimit').value = config.HISTORY_LIMIT_PER_CHAT || 200;
+        document.getElementById('settingMaxChats').value = config.MAX_CHATS_TO_LOAD || 20;
+        
+        // Показываем статус подключения
+        updateTelegramStatus(config);
+        
+        // Проверяем статус Telegram клиента
+        checkTelegramStatus();
+    } catch (e) {
+        console.error('❌ Ошибка загрузки настроек:', e);
     }
-    addLog('Обновлено', 'info');
 }
 
-function addLog(message, type = 'info') {
-    const log = document.getElementById('activityLog');
-    const entry = document.createElement('div');
-    entry.className = `log-entry log-${type}`;
-    entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-    log.appendChild(entry);
-    log.scrollTop = log.scrollHeight;
+function updateTelegramStatus(config) {
+    const hasConfig = config.API_ID && config.API_HASH && config.PHONE;
+    const statusDiv = document.getElementById('telegramStatus');
+    
+    if (statusDiv) {
+        if (hasConfig) {
+            statusDiv.innerHTML = '<span class="badge bg-success">✅ Telegram настроен</span>';
+        } else {
+            statusDiv.innerHTML = '<span class="badge bg-warning">⚠️ Требуется настройка Telegram</span>';
+        }
+    }
 }
 
-function formatDate(dateString) {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
-        day: '2-digit',
-        month: '2-digit',
-        year: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
+// Проверка статуса Telegram
+async function checkTelegramStatus() {
+    try {
+        const status = await apiRequest('/telegram_status');
+        const statusDiv = document.getElementById('restartStatus');
+        
+        if (statusDiv) {
+            if (status.connected) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> 
+                        <strong>Telegram подключён</strong><br>
+                        Пользователь: ${status.first_name} ${status.last_name || ''} (@${status.username || 'нет username'})<br>
+                        ID: ${status.user_id} | Phone: ${status.phone}
+                    </div>
+                `;
+            } else {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Telegram не подключён</strong><br>
+                        ${status.message || 'Требуется настройка и авторизация'}
+                    </div>
+                `;
+            }
+        }
+        return status;
+    } catch (e) {
+        console.error('❌ Ошибка проверки статуса:', e);
+        const statusDiv = document.getElementById('restartStatus');
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
+        }
+        return { connected: false, message: e.message };
+    }
 }
 
+// Перезапуск Telegram
+async function restartTelegram() {
+    const statusDiv = document.getElementById('restartStatus');
+    
+    try {
+        const result = await apiRequest('/restart', { method: 'POST' });
+        
+        if (statusDiv) {
+            if (result.status === 'restart_required') {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Требуется перезапуск процесса</strong><br>
+                        ${result.message}<br><br>
+                        <small>Остановите сервер (Ctrl+C) и запустите снова: <code>python telegrab.py</code></small>
+                    </div>
+                `;
+            } else {
+                statusDiv.innerHTML = `<div class="alert alert-success"><i class="bi bi-check-circle"></i> ${result.message}</div>`;
+            }
+        }
+        
+        addLog('Запрошен перезапуск Telegram', 'info');
+    } catch (e) {
+        console.error('❌ Ошибка:', e);
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+}
+
+// Быстрые действия
+async function loadMissedAll() {
+    if (!confirm('Загрузить пропущенные сообщения для всех чатов?')) return;
+    
+    try {
+        const result = await apiRequest('/load_missed_all', { method: 'POST' });
+        addLog(`Создано задач: ${result.task_ids?.length || 0}`, 'info');
+        refreshQueue();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+function showJoinModal() {
+    new bootstrap.Modal(document.getElementById('joinChatModal')).show();
+}
+
+async function joinChat() {
+    const chatId = document.getElementById('joinChatInput').value.trim();
+    const loadHistory = document.getElementById('joinAndLoad').checked;
+    
+    if (!chatId) {
+        alert('Введите ссылку или username чата');
+        return;
+    }
+    
+    try {
+        const result = await apiRequest(`/load?chat_id=${encodeURIComponent(chatId)}&join=true${loadHistory ? '&limit=0' : ''}`, {
+            method: 'POST'
+        });
+        addLog(`Задача на вступление создана: ${result.task_id}`, 'success');
+        bootstrap.Modal.getInstance(document.getElementById('joinChatModal')).hide();
+        refreshQueue();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+function showLoadHistory(chatId) {
+    document.getElementById('loadHistoryChatId').value = chatId;
+    new bootstrap.Modal(document.getElementById('loadHistoryModal')).show();
+}
+
+async function startLoadDialog(chatId) {
+    // Начинаем загрузку истории для диалога
+    try {
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=0`, { method: 'POST' });
+        addLog(`Загрузка начата: ${result.task_id}`, 'success');
+        refreshQueue();
+        // Обновляем список чатов через 3 секунды
+        setTimeout(loadChats, 3000);
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function confirmLoadHistory() {
+    const chatId = document.getElementById('loadHistoryChatId').value;
+    const limit = document.getElementById('loadHistoryLimit').value || 0;
+    
+    try {
+        const result = await apiRequest(`/load?chat_id=${chatId}&limit=${limit}`, { method: 'POST' });
+        addLog(`Загрузка истории начата: ${result.task_id}`, 'info');
+        bootstrap.Modal.getInstance(document.getElementById('loadHistoryModal')).hide();
+        refreshQueue();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function loadMissed(chatId) {
+    try {
+        const result = await apiRequest(`/load?chat_id=${chatId}&missed=true`, { method: 'POST' });
+        addLog(`Догрузка пропущенных: ${result.task_id}`, 'info');
+        refreshQueue();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function exportData() {
+    try {
+        const result = await apiRequest('/export', {
+            method: 'POST',
+            body: JSON.stringify({ limit: 10000 })
+        });
+        const blob = new Blob([JSON.stringify(result.messages, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `telegrab_export_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        addLog(`Экспортировано ${result.count} сообщений`, 'success');
+    } catch (e) {
+        alert('Ошибка экспорта: ' + e.message);
+    }
+}
+
+async function clearDatabase() {
+    if (!confirm('Вы уверены? Все сохранённые сообщения будут удалены!')) return;
+    
+    try {
+        await apiRequest('/clear_database', { method: 'POST' });
+        addLog('База данных очищена', 'success');
+        loadStats();
+        loadChats();
+        loadMessages();
+    } catch (e) {
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+async function restartBot() {
+    if (!confirm('Перезапустить бота? Требуется ручной перезапуск процесса.')) return;
+    
+    addLog('Для перезапуска остановите и запустите telegrab.py заново', 'warning');
+    alert('Перезапустите бот командой:\n\npython3 telegrab.py');
+}
+
+async function refreshQueue() {
+    try {
+        const [queue, tasksData] = await Promise.all([
+            apiRequest('/queue'),
+            apiRequest('/tasks')
+        ]);
+        
+        document.getElementById('taskQueueSize').textContent = queue.size || 0;
+        document.getElementById('taskProcessingStatus').textContent = queue.processing ? 'Обработка' : 'Ожидание';
+        
+        const tasksList = document.getElementById('tasksList');
+        const tasks = tasksData.tasks || [];
+        const activeTasks = tasks.filter(t => t.status === 'pending' || t.status === 'processing');
+        
+        if (activeTasks.length > 0) {
+            tasksList.innerHTML = activeTasks.map(task => `
+                <div class="card mb-2">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${task.type}</strong>
+                                <span class="badge badge-chat ms-2">${task.id}</span>
+                                <br><small class="text-muted">Чат: ${task.data?.chat_id || '-'}</small>
+                            </div>
+                            <span class="badge ${task.status === 'processing' ? 'bg-warning' : 'bg-secondary'}">
+                                ${task.status}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            tasksList.innerHTML = '<div class="text-center text-muted py-5">Нет активных задач</div>';
+        }
+    } catch (e) {
+        console.error('Failed to refresh queue:', e);
+    }
+}
+
+async function refreshAll() {
+    loadStats();
+    loadChats();
+    loadMessages();
+    refreshQueue();
+    addLog('Данные обновлены', 'info');
+}
+
+function selectChat(chatId) {
+    document.getElementById('messageChatFilter').value = chatId;
+    document.querySelector('[data-bs-target="#messages"]').click();
+    messagePage = 0;
+    loadMessages();
+}
+
+function copyApiKey() {
+    const input = document.getElementById('settingApiKey');
+    input.select();
+    document.execCommand('copy');
+    addLog('API ключ скопирован', 'success');
+}
+
+// Экранирование для HTML атрибутов
+function escapeHtmlAttr(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Экранирование для JavaScript в onclick
+function escapeJs(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+// Экранирование для HTML (текст)
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
@@ -640,56 +997,278 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// Settings
-function loadSettings() {
-    // Загрузка настроек
-}
-
-function toggleApiKey() {
-    const input = document.getElementById('apiKeyDisplay');
-    input.type = input.type === 'password' ? 'text' : 'password';
-}
-
-function clearCache() {
-    if (confirm('Очистить кэш?')) {
-        localStorage.clear();
-        location.reload();
+function formatDate(dateStr) {
+    if (!dateStr) return '-';
+    try {
+        const date = new Date(dateStr);
+        return date.toLocaleString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch {
+        return dateStr;
     }
 }
 
-// Form handlers
-document.getElementById('telegramConfigForm')?.addEventListener('submit', async (e) => {
+function addLog(message, type = 'info') {
+    const log = document.getElementById('activityLog');
+    const entry = document.createElement('div');
+    entry.className = `log-entry log-${type}`;
+    const time = new Date().toLocaleTimeString('ru-RU');
+    entry.textContent = `[${time}] ${message}`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+}
+
+// Обработка форм
+document.getElementById('settingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    const apiId = document.getElementById('authApiId').value;
-    const apiHash = document.getElementById('authApiHash').value;
-    const phone = document.getElementById('authPhone').value;
+    // Собираем данные конфигурации
+    const configData = {
+        API_ID: parseInt(document.getElementById('settingApiId').value) || 0,
+        API_HASH: document.getElementById('settingApiHash').value,
+        PHONE: document.getElementById('settingPhone').value,
+        REQUESTS_PER_SECOND: parseInt(document.getElementById('settingRequestsPerSecond').value) || 1,
+        MESSAGES_PER_REQUEST: parseInt(document.getElementById('settingMessagesPerRequest').value) || 100,
+        HISTORY_LIMIT_PER_CHAT: parseInt(document.getElementById('settingHistoryLimit').value) ?? 200,
+        MAX_CHATS_TO_LOAD: parseInt(document.getElementById('settingMaxChats').value) || 20,
+        AUTO_LOAD_HISTORY: true,
+        AUTO_LOAD_MISSED: true
+    };
+
+    const statusDiv = document.getElementById('restartStatus');
+    if (statusDiv) {
+        statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение конфигурации...</div>';
+    }
 
     try {
-        await apiRequest('/config', {
+        // Отправляем конфигурацию на сервер
+        const result = await apiRequest('/config', {
             method: 'POST',
-            body: JSON.stringify({ API_ID: apiId, API_HASH: apiHash, PHONE: phone })
+            body: JSON.stringify(configData)
         });
-
-        addLog('Конфигурация сохранена', 'success');
-        document.getElementById('qrAuthSection').style.display = 'block';
-        document.getElementById('telegramConfigForm').style.display = 'none';
+        
+        addLog('Настройки сохранены', 'success');
+        
+        if (result.restart_required) {
+            if (statusDiv) {
+                statusDiv.innerHTML = `
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Конфигурация сохранена!</strong><br>
+                        Для применения новых настроек Telegram требуется перезапуск процесса.<br><br>
+                        <small>Остановите сервер (Ctrl+C) и запустите снова: <code>python telegrab.py</code></small>
+                    </div>
+                `;
+            }
+        } else {
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> ✅ Настройки сохранены!</div>';
+            }
+        }
+        
+        // Обновляем статус
+        setTimeout(checkTelegramStatus, 1000);
     } catch (e) {
-        alert('Ошибка: ' + e.message);
+        console.error('❌ Ошибка сохранения настроек:', e);
+        if (statusDiv) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
+        }
     }
 });
 
+// Пинг WebSocket
+setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+    }
+}, 30000);
+
+// ==================== QR АВТОРИЗАЦИЯ ====================
+
+// Показать QR авторизацию
 async function showQrAuth() {
+    const modal = new bootstrap.Modal(document.getElementById('qrAuthModal'));
+    modal.show();
+    
+    await loadQrCode();
+    
+    // Начинаем проверку статуса каждые 3 секунды
+    qrCheckInterval = setInterval(checkQrStatus, 3000);
+}
+
+// Загрузка QR-кода
+async function loadQrCode() {
+    const content = document.getElementById('qrAuthContent');
+    content.innerHTML = `
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Загрузка...</span>
+        </div>
+        <p>Генерация QR-кода...</p>
+    `;
+    
     try {
         const data = await apiRequest('/qr_login');
-        if (data.qr_code_url) {
-            alert(`QR Code URL: ${data.qr_code_url}`);
-            addLog('QR-код сгенерирован', 'info');
-        } else if (data.authorized) {
-            addLog('Уже авторизован', 'success');
-            setTimeout(() => location.reload(), 1000);
+        
+        if (data.authorized) {
+            // Уже авторизован
+            showAuthSuccess(data.user);
+            return;
         }
+        
+        // Если ошибка с event loop
+        if (data.error) {
+            document.getElementById('qrAuthContent').innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h5>${data.error}</h5>
+                    <p>${data.message}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Генерируем QR-код используя API qrcode
+        const qrCodeApi = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(data.qr_code_url)}`;
+        
+        document.getElementById('qrAuthContent').innerHTML = `
+            <div class="alert alert-info mb-3">
+                <i class="bi bi-info-circle"></i> Отсканируйте QR-код приложением Telegram:
+                <br><strong>Настройки → Устройства → Подключить устройство</strong>
+            </div>
+            <img src="${qrCodeApi}" alt="QR Code" class="img-fluid rounded mb-3" style="max-width: 250px;">
+            <p class="text-muted small">QR-код действителен 30 секунд</p>
+            <div id="qrTimer" class="text-warning"></div>
+        `;
+        
+        // Таймер обратного отсчёта
+        let timeLeft = 25;
+        const timerInterval = setInterval(() => {
+            timeLeft--;
+            const timer = document.getElementById('qrTimer');
+            if (timer) {
+                timer.textContent = `Обновление через: ${timeLeft} сек`;
+            }
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+            }
+        }, 1000);
+        
     } catch (e) {
-        alert('Ошибка: ' + e.message);
+        document.getElementById('qrAuthContent').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-x-circle"></i> Ошибка: ${e.message}
+            </div>
+        `;
     }
 }
+
+// Проверка статуса QR
+async function checkQrStatus() {
+    try {
+        const data = await apiRequest('/qr_login/check');
+        console.log('QR статус:', data);
+
+        if (data.authorized) {
+            // Успешная авторизация
+            showAuthSuccess(data.user);
+        }
+    } catch (e) {
+        console.log('Ожидание авторизации...');
+    }
+}
+
+// Показ успеха авторизации
+function showAuthSuccess(user) {
+    console.log('Авторизация успешна:', user);
+    
+    // Останавливаем проверку
+    if (qrCheckInterval) {
+        clearInterval(qrCheckInterval);
+        qrCheckInterval = null;
+    }
+
+    document.getElementById('qrAuthContent').innerHTML = `
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i>
+            <h5>Успешная авторизация!</h5>
+            <p>Пользователь: <strong>${user.first_name} ${user.last_name || ''}</strong></p>
+            <p>Username: @${user.username || 'не указан'}</p>
+        </div>
+    `;
+    
+    // Закрываем модальное окно
+    const modalEl = document.getElementById('qrAuthModal');
+    const modal = bootstrap.Modal.getInstance(modalEl);
+    if (modal) {
+        modal.hide();
+    }
+
+    // Перезагружаем страницу через 2 секунды
+    setTimeout(() => {
+        location.reload();
+    }, 2000);
+}
+
+// Обработчик формы конфигурации Telegram
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('telegramConfigForm');
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const statusDiv = document.getElementById('authStatus');
+            const apiId = document.getElementById('authApiId').value;
+            const apiHash = document.getElementById('authApiHash').value;
+            const phone = document.getElementById('authPhone').value;
+            
+            if (!apiId || !apiHash || !phone) {
+                if (statusDiv) {
+                    statusDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Заполните все поля</div>';
+                }
+                return;
+            }
+            
+            if (statusDiv) {
+                statusDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Сохранение конфигурации...</div>';
+            }
+            
+            try {
+                // Сохраняем конфигурацию
+                const configData = {
+                    API_ID: parseInt(apiId),
+                    API_HASH: apiHash,
+                    PHONE: phone,
+                    REQUESTS_PER_SECOND: 1,
+                    MESSAGES_PER_REQUEST: 100,
+                    HISTORY_LIMIT_PER_CHAT: 200,
+                    MAX_CHATS_TO_LOAD: 20,
+                    AUTO_LOAD_HISTORY: true,
+                    AUTO_LOAD_MISSED: true
+                };
+                
+                await apiRequest('/config', {
+                    method: 'POST',
+                    body: JSON.stringify(configData)
+                });
+                
+                if (statusDiv) {
+                    statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> Конфигурация сохранена!</div>';
+                }
+                
+                // Показываем секцию QR авторизации
+                document.getElementById('qrAuthSection').style.display = 'block';
+                document.getElementById('telegramConfigForm').style.display = 'none';
+                
+            } catch (e) {
+                console.error('Ошибка сохранения:', e);
+                if (statusDiv) {
+                    statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
+                }
+            }
+        });
+    }
+});
