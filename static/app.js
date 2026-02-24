@@ -420,7 +420,7 @@ function renderChatsTable(chats) {
         <tr>
             <td>
                 <strong>${escapeHtml(chat.title)}</strong>
-                <br><small class="text-muted">ID: ${chat.id}</small>
+                <br><small class="text-muted">ID: ${escapeHtml(chat.id)}</small>
             </td>
             <td>
                 <span class="badge ${getTypeBadgeClass(chat.type)}">
@@ -439,7 +439,7 @@ function renderChatsTable(chats) {
                     <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')" title="Загрузить историю">
                         <i class="bi bi-download"></i>
                     </button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="clearChat('${chat.id}', '${escapeHtml(chat.title)}')" title="Очистить чат из БД">
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearChat('${escapeJs(chat.id)}', '${escapeJs(chat.title)}')" title="Очистить чат из БД">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -949,7 +949,29 @@ function copyApiKey() {
     addLog('API ключ скопирован', 'success');
 }
 
-// Утилиты
+// Экранирование для HTML атрибутов
+function escapeHtmlAttr(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+// Экранирование для JavaScript в onclick
+function escapeJs(text) {
+    if (!text) return '';
+    return String(text)
+        .replace(/\\/g, '\\\\')
+        .replace(/'/g, "\\'")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r');
+}
+
+// Экранирование для HTML (текст)
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
