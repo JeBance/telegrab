@@ -83,7 +83,7 @@ async function checkAuthStatus() {
             
             const authStatus = document.getElementById('authStatus');
             if (authStatus) {
-                authStatus.innerHTML = `<div class="alert alert-danger">Ошибка подключения: ${e.message}<br><small>Проверьте что сервер запущен</small></div>`;
+                authStatus.innerHTML = `<div class="alert alert-danger">Ошибка подключения: ${escapeHtml(e.message)}<br><small>Проверьте что сервер запущен</small></div>`;
             }
         }, 1000);
         
@@ -598,7 +598,7 @@ async function loadMessages() {
     } catch (e) {
         console.error('❌ Ошибка загрузки сообщений:', e);
         console.error('Stack:', e.stack);
-        document.getElementById('messagesTable').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Ошибка: ${e.message}</td></tr>`;
+        document.getElementById('messagesTable').innerHTML = `<tr><td colspan="4" class="text-center text-danger">Ошибка: ${escapeHtml(e.message)}</td></tr>`;
     }
 }
 
@@ -731,7 +731,7 @@ async function checkTelegramStatus() {
         console.error('❌ Ошибка проверки статуса:', e);
         const statusDiv = document.getElementById('restartStatus');
         if (statusDiv) {
-            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
         }
         return { connected: false, message: e.message };
     }
@@ -763,7 +763,7 @@ async function restartTelegram() {
     } catch (e) {
         console.error('❌ Ошибка:', e);
         if (statusDiv) {
-            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
         }
     }
 }
@@ -1057,7 +1057,7 @@ document.getElementById('settingsForm').addEventListener('submit', async (e) => 
     } catch (e) {
         console.error('❌ Ошибка сохранения настроек:', e);
         if (statusDiv) {
-            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
         }
     }
 });
@@ -1248,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 console.error('Ошибка сохранения:', e);
                 if (statusDiv) {
-                    statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${e.message}</div>`;
+                    statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle"></i> Ошибка: ${escapeHtml(e.message)}</div>`;
                 }
             }
         });
