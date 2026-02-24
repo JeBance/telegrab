@@ -1336,7 +1336,7 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         if not chat:
             raise Exception(f"Чат не найден: {chat_id}")
 
-        chat_title = getattr(chat, 'title', '') or getattr(chat, 'username', f"chat_{chat_id}")
+        chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat_id}"
 
         status = db.get_loading_status(chat_id)
         last_loaded_id = status.get('last_loaded_id', 0)
@@ -1445,7 +1445,7 @@ async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=
     """Догрузка пропущенных сообщений"""
     try:
         chat = await client.get_entity(chat_id)
-        chat_title = getattr(chat, 'title', '') or getattr(chat, 'username', f"chat_{chat_id}")
+        chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat_id}"
 
         if since_date:
             since_dt = datetime.fromisoformat(since_date.replace('Z', '+00:00')) if isinstance(since_date, str) else since_date
@@ -1632,7 +1632,7 @@ class TelegramClientWrapper:
             chat = await message.get_chat()
             sender = await message.get_sender()
 
-            chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', f"chat_{chat.id}")
+            chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat.id}"
             sender_name = "Unknown"
             if sender:
                 sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', '') or getattr(sender, 'title', 'Unknown')
