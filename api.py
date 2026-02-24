@@ -1053,6 +1053,26 @@ async def get_telegram_status(api_key: str = Depends(get_api_key)):
 
     return status
 
+async def wait_for_qr_auth(qr_login, client):
+    """Фоновая задача ожидания QR-аутентификации"""
+    try:
+        print("📱 Ожидание сканирования QR-кода...")
+        await qr_login.wait(timeout=60)  # Ждём 60 секунд
+        
+        # Проверяем авторизацию после wait()
+        if await client.is_user_authorized():
+            print("✅ QR-аутентификация успешна")
+            tg_client.qr_auth_complete = True
+        else:
+            print("⚠️  QR-аутентификация не завершена")
+            tg_client.qr_auth_complete = False
+    except asyncio.TimeoutError:
+        print("⏱️  Таймаут QR-аутентификации (60 сек)")
+        tg_client.qr_auth_complete = False
+    except Exception as e:
+        print(f"❌ Ошибка QR-аутентификации: {e}")
+        tg_client.qr_auth_complete = False
+
 @app.get("/qr_login")
 async def get_qr_login(api_key: str = Depends(get_api_key)):
     """Получить QR-код для авторизации"""
@@ -1070,11 +1090,11 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
                 system_version="Linux"
             )
             print(f"🔌 Создание нового Telegram клиента для {CONFIG['PHONE']}...")
-        
+
         if not tg_client.client.is_connected():
             await tg_client.client.connect()
             print("✅ Клиент подключён")
-        
+
         # Проверяем не авторизован ли уже
         if await tg_client.client.is_user_authorized():
             me = await tg_client.client.get_me()
@@ -1082,14 +1102,18 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
                 'authorized': True,
                 'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username}
             }
-        
+
         # Создаём QR login
         print("📱 Генерация QR-кода...")
         qr_login = await tg_client.client.qr_login()
-        
+
         # Сохраняем qr_login в клиенте для последующей проверки
         tg_client.qr_login = qr_login
-        
+        tg_client.qr_auth_complete = False  # Сбрасываем флаг завершения
+
+        # Запускаем фоновую задачу ожидания авторизации
+        asyncio.create_task(wait_for_qr_auth(qr_login, tg_client.client))
+
         return {
             'authorized': False,
             'qr_code_url': qr_login.url,
@@ -1109,7 +1133,7 @@ async def get_qr_login(api_key: str = Depends(get_api_key)):
                     }
             except:
                 pass
-        
+
         raise HTTPException(status_code=500, detail=error_msg)
 
 @app.post("/qr_login/check")
@@ -1119,7 +1143,43 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
         if not tg_client.client:
             raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
 
-        # Переподключаем для чтения обновлённой сессии
+        # Проверяем флаг завершения QR-аутентификации
+        if hasattr(tg_client, 'qr_auth_complete') and tg_client.qr_auth_complete:
+            # Авторизация завершена через wait()
+            if tg_client.client.is_connected():
+                await tg_client.client.disconnect()
+                await asyncio.sleep(0.5)
+
+            await tg_client.client.connect()
+            
+            if await tg_client.client.is_user_authorized():
+                me = await tg_client.client.get_me()
+                print(f"✅ Авторизация подтверждена: {me.first_name}")
+
+                # Запуск обработчика задач
+                print("🔄 Запуск обработчика задач...")
+                asyncio.create_task(task_queue.process_tasks(tg_client.client))
+
+                # Запуск автозагрузки если включена
+                if CONFIG['AUTO_LOAD_HISTORY']:
+                    print("📚 Автозагрузка истории включена")
+                    asyncio.create_task(tg_client.auto_load_history())
+
+                # Обработчик новых сообщений
+                from telethon import events
+                @tg_client.client.on(events.NewMessage)
+                async def message_handler(event):
+                    await tg_client.handle_new_message(event)
+
+                tg_client.running = True
+                print("✅ Обработчик задач запущен")
+
+                return {
+                    'authorized': True,
+                    'user': {'id': me.id, 'first_name': me.first_name, 'username': me.username, 'phone': CONFIG['PHONE']}
+                }
+
+        # Фоллбэк: проверяем авторизацию напрямую (для совместимости)
         if tg_client.client.is_connected():
             await tg_client.client.disconnect()
             await asyncio.sleep(0.5)
@@ -1128,7 +1188,6 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
         print("✅ Клиент подключён для проверки авторизации")
 
         if await tg_client.client.is_user_authorized():
-            # Проверяем не запущены ли уже обработчики
             if not tg_client.running:
                 me = await tg_client.client.get_me()
                 print(f"✅ Авторизация подтверждена: {me.first_name}")
@@ -1136,13 +1195,13 @@ async def check_qr_login(api_key: str = Depends(get_api_key)):
                 # Запуск обработчика задач
                 print("🔄 Запуск обработчика задач...")
                 asyncio.create_task(task_queue.process_tasks(tg_client.client))
-                
+
                 # Запуск автозагрузки если включена
                 if CONFIG['AUTO_LOAD_HISTORY']:
                     print("📚 Автозагрузка истории включена")
                     asyncio.create_task(tg_client.auto_load_history())
 
-                # Обработчик новых сообщений (если ещё не зарегистрирован)
+                # Обработчик новых сообщений
                 from telethon import events
                 @tg_client.client.on(events.NewMessage)
                 async def message_handler(event):
@@ -1541,6 +1600,7 @@ class TelegramClientWrapper:
         self.client = None
         self.running = False
         self.qr_login = None
+        self.qr_auth_complete = False  # Флаг завершения QR-аутентификации
 
     async def connect_to_telegram(self):
         """Подключение к Telegram и регистрация всех обработчиков"""
