@@ -219,9 +219,38 @@ class Database:
                 text TEXT,
                 sender_name TEXT,
                 message_date TEXT,
-                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                media_type TEXT,
+                file_id TEXT,
+                file_name TEXT,
+                file_size INTEGER
             )
         ''')
+
+        # Добавляем новые поля если их нет (миграция для старых БД)
+        try:
+            cursor.execute('ALTER TABLE messages ADD COLUMN media_type TEXT')
+            logger.info("Добавлено поле media_type")
+        except sqlite3.OperationalError:
+            pass  # Поле уже существует
+
+        try:
+            cursor.execute('ALTER TABLE messages ADD COLUMN file_id TEXT')
+            logger.info("Добавлено поле file_id")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute('ALTER TABLE messages ADD COLUMN file_name TEXT')
+            logger.info("Добавлено поле file_name")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute('ALTER TABLE messages ADD COLUMN file_size INTEGER')
+            logger.info("Добавлено поле file_size")
+        except sqlite3.OperationalError:
+            pass
 
         # КОМБИНИРОВАННЫЙ UNIQUE индекс (chat_id + message_id)
         # Позволяет сохранять сообщения с одинаковыми message_id из разных чатов
@@ -259,7 +288,8 @@ class Database:
         conn.commit()
         conn.close()
 
-    def save_message(self, message_id, chat_id, chat_title, text, sender_name, message_date):
+    def save_message(self, message_id, chat_id, chat_title, text, sender_name, message_date, 
+                     media_type=None, file_id=None, file_name=None, file_size=None):
         """Сохранение сообщения в базу"""
         import sqlite3
         try:
@@ -268,16 +298,18 @@ class Database:
 
             cursor.execute('''
                 INSERT OR IGNORE INTO messages
-                (message_id, chat_id, chat_title, text, sender_name, message_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (message_id, chat_id, chat_title, text, sender_name, message_date))
+                (message_id, chat_id, chat_title, text, sender_name, message_date, 
+                 media_type, file_id, file_name, file_size)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (message_id, chat_id, chat_title, text, sender_name, message_date,
+                  media_type, file_id, file_name, file_size))
 
             saved = cursor.rowcount > 0
             conn.commit()
             conn.close()
             return saved
         except Exception as e:
-            print(f"❌ Ошибка сохранения: {e}")
+            logger.error(f"Ошибка сохранения: {e}")
             return False
 
     def update_loading_status(self, chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded=False):
@@ -1602,25 +1634,73 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 break
 
             for message in messages:
-                if not message.text:
-                    logger.debug(f"Пропущено сообщение {message.id} без текста (type={type(message).__name__})")
+                # Определяем тип медиа и информацию о файле
+                media_type = None
+                file_id = None
+                file_name = None
+                file_size = None
+                
+                # Проверяем наличие медиа
+                if message.photo:
+                    media_type = 'photo'
+                    if message.photo and hasattr(message.photo, 'id'):
+                        file_id = str(message.photo.id)
+                elif message.video:
+                    media_type = 'video'
+                    file_id = str(message.video.id) if hasattr(message.video, 'id') else None
+                    file_size = message.video.size if hasattr(message.video, 'size') else None
+                    file_name = f"video_{message.id}.mp4"
+                elif message.document:
+                    media_type = 'document'
+                    file_id = str(message.document.id) if hasattr(message.document, 'id') else None
+                    file_size = message.document.size if hasattr(message.document, 'size') else None
+                    file_name = message.document.file_name if hasattr(message.document, 'file_name') else None
+                elif message.audio:
+                    media_type = 'audio'
+                    file_id = str(message.audio.id) if hasattr(message.audio, 'id') else None
+                    file_size = message.audio.size if hasattr(message.audio, 'size') else None
+                elif message.voice:
+                    media_type = 'voice'
+                    file_id = str(message.voice.id) if hasattr(message.voice, 'id') else None
+                elif message.sticker:
+                    media_type = 'sticker'
+                    file_id = str(message.sticker.id) if hasattr(message.sticker, 'id') else None
+                elif message.gif:
+                    media_type = 'gif'
+                    file_id = str(message.gif.id) if hasattr(message.gif, 'id') else None
+                
+                # Пропускаем только системные сообщения без текста и медиа
+                if not message.text and not media_type:
+                    logger.debug(f"Пропущено сообщение {message.id} без текста и медиа (type={type(message).__name__})")
                     continue
 
+                # Получаем текст или создаём описание медиа
+                text = message.text or ""
+                if media_type and not text:
+                    text = f"[{media_type}]"
+                
+                # Получаем отправителя
                 sender = await message.get_sender()
                 sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', 'Unknown')
 
+                # Сохраняем сообщение
                 saved = db.save_message(
                     message_id=message.id,
                     chat_id=chat_id,
                     chat_title=chat_title,
-                    text=message.text,
+                    text=text,
                     sender_name=sender_name,
-                    message_date=message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date)
+                    message_date=message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date),
+                    media_type=media_type,
+                    file_id=file_id,
+                    file_name=file_name,
+                    file_size=file_size
                 )
 
                 # Увеличиваем счётчики только если сообщение сохранено
                 if saved:
-                    logger.debug(f"Сохранено сообщение {message.id}")
+                    media_log = f" с медиа: {media_type}" if media_type else ""
+                    logger.debug(f"Сохранено сообщение {message.id}{media_log}")
                     message_count += 1
                     total_loaded += 1
                     last_message_date = message.date
@@ -1878,11 +1958,34 @@ class TelegramClientWrapper:
         """Обработка нового сообщения"""
         try:
             message = event.message
-            print(f"📩 Новое сообщение в чате {event.chat_id}: {message.text[:50]}...")
             
-            if not message.text:
-                print("⚠️  Сообщение без текста, пропускаем")
+            # Определяем тип медиа
+            media_type = None
+            file_id = None
+            file_name = None
+            file_size = None
+            
+            if message.photo:
+                media_type = 'photo'
+                file_id = str(message.photo.id) if hasattr(message.photo, 'id') else None
+            elif message.video:
+                media_type = 'video'
+                file_id = str(message.video.id) if hasattr(message.video, 'id') else None
+                file_size = message.video.size if hasattr(message.video, 'size') else None
+            elif message.document:
+                media_type = 'document'
+                file_id = str(message.document.id) if hasattr(message.document, 'id') else None
+                file_size = message.document.size if hasattr(message.document, 'size') else None
+                file_name = message.document.file_name if hasattr(message.document, 'file_name') else None
+            
+            # Пропускаем только системные сообщения без текста и медиа
+            if not message.text and not media_type:
+                logger.debug(f"Пропущено сообщение {message.id} без текста и медиа")
                 return
+
+            # Формируем текст для логирования
+            log_text = message.text[:50] if message.text else f"[{media_type}]"
+            logger.info(f"📩 Новое сообщение в чате {event.chat_id}: {log_text}...")
 
             chat = await message.get_chat()
             sender = await message.get_sender()
@@ -1893,16 +1996,23 @@ class TelegramClientWrapper:
                 sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', '') or getattr(sender, 'title', 'Unknown')
 
             message_date = message.date.isoformat() if hasattr(message.date, 'isoformat') else str(message.date)
+            
+            # Получаем текст или описание медиа
+            text = message.text or f"[{media_type}]"
 
             saved = db.save_message(
                 message_id=message.id,
                 chat_id=chat.id,
                 chat_title=chat_title,
-                text=message.text,
+                text=text,
                 sender_name=sender_name,
-                message_date=message_date
+                message_date=message_date,
+                media_type=media_type,
+                file_id=file_id,
+                file_name=file_name,
+                file_size=file_size
             )
-            print(f"{'✅' if saved else '⚠️'} Сообщение сохранено в БД: {message.id}")
+            logger.info(f"{'✅' if saved else '⚠️'} Сообщение сохранено в БД: {message.id}")
 
             await manager.broadcast({
                 'type': 'new_message',
