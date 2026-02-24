@@ -681,6 +681,101 @@ async def clear_database(api_key: str = Depends(get_api_key)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ============================================================
+# НОВЫЕ ENDPOINTS ДЛЯ БД V6
+# ============================================================
+
+@app.get("/message_raw")
+async def get_message_raw(chat_id: int, message_id: int, api_key: str = Depends(get_api_key)):
+    """Получить полные RAW данные сообщения"""
+    try:
+        raw_data = db.get_message_raw_data(chat_id, message_id)
+        if raw_data:
+            return {'status': 'ok', 'data': raw_data}
+        raise HTTPException(status_code=404, detail="Сообщение не найдено")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/message_edits")
+async def get_message_edits(chat_id: int, message_id: int, api_key: str = Depends(get_api_key)):
+    """Получить историю редактирований сообщения"""
+    try:
+        edits = db.get_message_edits(chat_id, message_id)
+        return {'status': 'ok', 'count': len(edits), 'edits': edits}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/message_events")
+async def get_message_events(chat_id: int, message_id: int = None, api_key: str = Depends(get_api_key)):
+    """Получить события сообщений"""
+    try:
+        events = db.get_message_events(chat_id, message_id)
+        return {'status': 'ok', 'count': len(events), 'events': events}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/files/stats")
+async def get_files_stats(api_key: str = Depends(get_api_key)):
+    """Получить статистику по файлам"""
+    try:
+        stats = db.get_files_stats()
+        return {'status': 'ok', 'stats': stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/files")
+async def get_files_list(file_type: str = None, limit: int = 100, api_key: str = Depends(get_api_key)):
+    """Получить список файлов"""
+    try:
+        files = db.get_files_by_type(file_type, limit)
+        return {'status': 'ok', 'count': len(files), 'files': files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat_stats/{chat_id}")
+async def get_chat_detailed_stats(chat_id: int, api_key: str = Depends(get_api_key)):
+    """Получить подробную статистику чата"""
+    try:
+        stats = db.get_chat_detailed_stats(chat_id)
+        return {'status': 'ok', 'stats': stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/search_advanced")
+async def search_messages_advanced(
+    query: str = None,
+    chat_id: int = None,
+    sender_id: int = None,
+    has_media: bool = None,
+    media_type: str = None,
+    date_from: str = None,
+    date_to: str = None,
+    limit: int = 100,
+    api_key: str = Depends(get_api_key)
+):
+    """Расширенный поиск сообщений"""
+    try:
+        results = db.search_messages_advanced(
+            query=query, chat_id=chat_id, sender_id=sender_id,
+            has_media=has_media, media_type=media_type,
+            date_from=date_from, date_to=date_to, limit=limit
+        )
+        return {'status': 'ok', 'count': len(results), 'results': results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/media_gallery")
+async def get_media_gallery(chat_id: int = None, media_type: str = None, 
+                            limit: int = 50, api_key: str = Depends(get_api_key)):
+    """Получить галерею медиа"""
+    try:
+        messages = db.get_messages_with_media(chat_id, media_type, limit)
+        return {'status': 'ok', 'count': len(messages), 'media': messages}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/config")
 async def get_config(api_key: str = Depends(get_api_key)):
     """Получить текущую конфигурацию"""

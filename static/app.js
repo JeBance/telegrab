@@ -454,6 +454,9 @@ function renderChatsTable(chats) {
             </td>
             <td>
                 <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-outline-info" onclick="showChatDetailedStats('${chat.id}', '${escapeJs(chat.title)}')" title="Статистика чата">
+                        <i class="bi bi-bar-chart-line"></i>
+                    </button>
                     <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')" title="Загрузить историю">
                         <i class="bi bi-download"></i>
                     </button>
@@ -592,19 +595,39 @@ async function loadMessages() {
             console.log(`✅ Загружено ${data.messages.length} сообщений (страница ${messagePage + 1})`);
             tbody.innerHTML = data.messages.map(msg => `
                 <tr>
-                    <td style="white-space: nowrap;">${escapeHtml(msg.chat_title || 'Unknown')}</td>
+                    <td style="white-space: nowrap;">
+                        ${escapeHtml(msg.chat_title || 'Unknown')}
+                        <br><small class="text-muted">ID: ${msg.message_id}</small>
+                    </td>
                     <td style="max-width: 600px; white-space: normal; word-wrap: break-word;">
                         ${escapeHtml(msg.text || '(без текста)')}
+                        ${msg.has_media ? `<br><span class="badge bg-info">${msg.media_type}</span>` : ''}
                     </td>
-                    <td style="white-space: nowrap;">${escapeHtml(msg.sender_name || 'Unknown')}</td>
-                    <td style="white-space: nowrap;">${formatDate(msg.message_date)}</td>
+                    <td style="white-space: nowrap;">
+                        ${escapeHtml(msg.sender_name || 'Unknown')}
+                        ${msg.views ? `<br><small class="text-muted"><i class="bi bi-eye"></i> ${msg.views}</small>` : ''}
+                    </td>
+                    <td style="white-space: nowrap;">
+                        ${formatDate(msg.message_date)}
+                        <div class="mt-1">
+                            <button class="btn btn-sm btn-outline-info" onclick="showMessageRaw('${msg.chat_id}', '${msg.message_id}')" title="RAW данные">
+                                <i class="bi bi-code-slash"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-warning" onclick="showMessageEdits('${msg.chat_id}', '${msg.message_id}')" title="История редактирований">
+                                <i class="bi bi-pencil-square"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="showMessageEvents('${msg.chat_id}', '${msg.message_id}')" title="События">
+                                <i class="bi bi-activity"></i>
+                            </button>
+                        </div>
+                    </td>
                 </tr>
             `).join('');
-            
+
             // Обновляем счётчик
             const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
             document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages} (всего: ${totalMessages} сообщений)`;
-            
+
             // Обновляем пагинацию
             updatePagination(totalPages);
         } else {
@@ -1249,20 +1272,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     AUTO_LOAD_HISTORY: true,
                     AUTO_LOAD_MISSED: true
                 };
-                
+
                 await apiRequest('/config', {
                     method: 'POST',
                     body: JSON.stringify(configData)
                 });
-                
+
                 if (statusDiv) {
                     statusDiv.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle"></i> Конфигурация сохранена!</div>';
                 }
-                
+
                 // Показываем секцию QR авторизации
                 document.getElementById('qrAuthSection').style.display = 'block';
                 document.getElementById('telegramConfigForm').style.display = 'none';
-                
+
             } catch (e) {
                 console.error('Ошибка сохранения:', e);
                 if (statusDiv) {
@@ -1272,3 +1295,341 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+// ============================================================
+// НОВЫЕ ФУНКЦИИ ДЛЯ БД V6
+// ============================================================
+
+// Показать RAW данные сообщения
+async function showMessageRaw(chatId, messageId) {
+    try {
+        console.log('📄 Загрузка RAW данных сообщения:', chatId, messageId);
+        const result = await apiRequest(`/message_raw?chat_id=${chatId}&message_id=${messageId}`);
+        
+        const modal = new bootstrap.Modal(document.getElementById('messageRawModal'));
+        document.getElementById('rawDataContent').textContent = JSON.stringify(result.data, null, 2);
+        document.getElementById('rawMessageId').textContent = `Сообщение ${messageId} (Чат: ${chatId})`;
+        modal.show();
+        
+        addLog(`RAW данные сообщения ${messageId} загружены`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки RAW:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Показать историю редактирований
+async function showMessageEdits(chatId, messageId) {
+    try {
+        console.log('📝 Загрузка истории редактирований:', chatId, messageId);
+        const result = await apiRequest(`/message_edits?chat_id=${chatId}&message_id=${messageId}`);
+        
+        const modal = new bootstrap.Modal(document.getElementById('messageEditsModal'));
+        const tbody = document.getElementById('editsTableBody');
+        
+        if (result.edits.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">История редактирований пуста</td></tr>';
+        } else {
+            tbody.innerHTML = result.edits.map((edit, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${formatDate(edit.edit_date)}</td>
+                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.old_text || '[нет данных]')}</pre></td>
+                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.new_text || '[нет данных]')}</pre></td>
+                </tr>
+            `).join('');
+        }
+        
+        document.getElementById('editsMessageId').textContent = `Сообщение ${messageId}`;
+        document.getElementById('editsCount').textContent = result.count;
+        modal.show();
+        
+        addLog(`История редактирований сообщения ${messageId} загружена (${result.count} записей)`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки редактирований:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Показать события сообщения
+async function showMessageEvents(chatId, messageId) {
+    try {
+        console.log('📊 Загрузка событий сообщения:', chatId, messageId);
+        const result = await apiRequest(`/message_events?chat_id=${chatId}&message_id=${messageId || ''}`);
+        
+        const modal = new bootstrap.Modal(document.getElementById('messageEventsModal'));
+        const tbody = document.getElementById('eventsTableBody');
+        
+        if (result.events.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">События не найдены</td></tr>';
+        } else {
+            tbody.innerHTML = result.events.map(event => `
+                <tr>
+                    <td><span class="badge bg-${getEventBadgeClass(event.event_type)}">${escapeHtml(event.event_type)}</span></td>
+                    <td>${formatDate(event.event_date)}</td>
+                    <td>${event.message_id ? `Сообщение ${event.message_id}` : '-'}</td>
+                </tr>
+            `).join('');
+        }
+        
+        modal.show();
+        addLog(`События загружены (${result.count} записей)`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки событий:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Класс для бейджа события
+function getEventBadgeClass(eventType) {
+    const classes = {
+        'deleted': 'danger',
+        'forwarded': 'info',
+        'pinned': 'warning',
+        'unpinned': 'secondary'
+    };
+    return classes[eventType] || 'secondary';
+}
+
+// Показать статистику файлов
+async function showFilesStats() {
+    try {
+        console.log('📁 Загрузка статистики файлов');
+        const result = await apiRequest('/files/stats');
+        
+        const stats = result.stats;
+        const sizeFormatted = formatFileSize(stats.total_size);
+        
+        const modal = new bootstrap.Modal(document.getElementById('filesStatsModal'));
+        document.getElementById('filesTotalCount').textContent = stats.total_files;
+        document.getElementById('filesTotalSize').textContent = sizeFormatted;
+        document.getElementById('filesTypesCount').textContent = stats.file_types;
+        modal.show();
+        
+        addLog(`Статистика файлов загружена: ${stats.total_files} файлов (${sizeFormatted})`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки статистики файлов:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Показать список файлов
+async function showFilesList(fileType = null) {
+    try {
+        console.log('📁 Загрузка списка файлов:', fileType || 'все');
+        const result = await apiRequest(`/files?file_type=${fileType || ''}&limit=100`);
+        
+        const modal = new bootstrap.Modal(document.getElementById('filesListModal'));
+        const tbody = document.getElementById('filesListBody');
+        
+        if (result.files.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Файлы не найдены</td></tr>';
+        } else {
+            tbody.innerHTML = result.files.map(file => `
+                <tr>
+                    <td><span class="badge bg-${getFileTypeBadgeClass(file.file_type)}">${escapeHtml(file.file_type || 'unknown')}</span></td>
+                    <td>${escapeHtml(file.file_name || 'unnamed')}</td>
+                    <td>${formatFileSize(file.file_size)}</td>
+                    <td>${file.mime_type || '-'}</td>
+                    <td>${formatDate(file.created_at)}</td>
+                </tr>
+            `).join('');
+        }
+        
+        document.getElementById('filesListCount').textContent = result.count;
+        modal.show();
+        
+        addLog(`Список файлов загружен: ${result.count} файлов`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки списка файлов:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Класс для бейджа типа файла
+function getFileTypeBadgeClass(fileType) {
+    const classes = {
+        'photo': 'info',
+        'video': 'danger',
+        'document': 'primary',
+        'audio': 'success',
+        'voice': 'warning',
+        'sticker': 'secondary',
+        'gif': 'dark'
+    };
+    return classes[fileType] || 'secondary';
+}
+
+// Форматирование размера файла
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Показать подробную статистику чата
+async function showChatDetailedStats(chatId, chatTitle) {
+    try {
+        console.log('📊 Загрузка подробной статистики чата:', chatTitle);
+        const result = await apiRequest(`/chat_stats/${chatId}`);
+        
+        const stats = result.stats;
+        const modal = new bootstrap.Modal(document.getElementById('chatStatsModal'));
+        
+        document.getElementById('chatStatsTitle').textContent = chatTitle;
+        document.getElementById('chatStatsTotalMessages').textContent = stats.total_messages || 0;
+        document.getElementById('chatStatsUniqueSenders').textContent = stats.unique_senders || 0;
+        document.getElementById('chatStatsWithMedia').textContent = stats.messages_with_media || 0;
+        document.getElementById('chatStatsTotalViews').textContent = stats.total_views || 0;
+        document.getElementById('chatStatsEditedMessages').textContent = stats.edited_messages || 0;
+        
+        // Типы медиа
+        const mediaTypesHtml = stats.media_types && Object.keys(stats.media_types).length > 0
+            ? Object.entries(stats.media_types).map(([type, count]) => 
+                `<span class="badge bg-${getFileTypeBadgeClass(type)} me-1">${type}: ${count}</span>`
+              ).join('')
+            : '<span class="text-muted">Нет медиа</span>';
+        document.getElementById('chatStatsMediaTypes').innerHTML = mediaTypesHtml;
+        
+        // События
+        const eventsHtml = stats.events && Object.keys(stats.events).length > 0
+            ? Object.entries(stats.events).map(([type, count]) => 
+                `<span class="badge bg-${getEventBadgeClass(type)} me-1">${type}: ${count}</span>`
+              ).join('')
+            : '<span class="text-muted">Нет событий</span>';
+        document.getElementById('chatStatsEvents').innerHTML = eventsHtml;
+        
+        modal.show();
+        addLog(`Подробная статистика чата "${chatTitle}" загружена`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки статистики чата:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Расширенный поиск
+async function showAdvancedSearch() {
+    const modal = new bootstrap.Modal(document.getElementById('advancedSearchModal'));
+    modal.show();
+}
+
+async function performAdvancedSearch() {
+    try {
+        const query = document.getElementById('searchQuery').value;
+        const chatId = document.getElementById('searchChatId').value;
+        const hasMedia = document.getElementById('searchHasMedia').checked;
+        const mediaType = document.getElementById('searchMediaType').value;
+        const dateFrom = document.getElementById('searchDateFrom').value;
+        const dateTo = document.getElementById('searchDateTo').value;
+        const limit = document.getElementById('searchLimit').value || 100;
+        
+        console.log('🔍 Расширенный поиск:', { query, chatId, hasMedia, mediaType, dateFrom, dateTo });
+        
+        const params = new URLSearchParams();
+        if (query) params.append('query', query);
+        if (chatId) params.append('chat_id', chatId);
+        if (hasMedia) params.append('has_media', 'true');
+        if (mediaType) params.append('media_type', mediaType);
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
+        params.append('limit', limit);
+        
+        const result = await apiRequest(`/search_advanced?${params.toString()}`, { method: 'POST' });
+        
+        const modal = bootstrap.Modal.getInstance(document.getElementById('advancedSearchModal'));
+        modal.hide();
+        
+        // Показываем результаты в таблице сообщений
+        displaySearchResults(result.results);
+        
+        addLog(`Расширенный поиск выполнен: ${result.count} результатов`, 'success');
+    } catch (e) {
+        console.error('Ошибка поиска:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+function displaySearchResults(results) {
+    const tbody = document.getElementById('messagesTable');
+    if (!tbody) return;
+    
+    if (results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Ничего не найдено</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = results.map(msg => `
+        <tr>
+            <td>
+                <strong>${escapeHtml(msg.chat_title || 'Unknown')}</strong>
+                <br><small class="text-muted">ID: ${msg.chat_id}</small>
+            </td>
+            <td>
+                ${msg.text_preview ? escapeHtml(msg.text_preview.substring(0, 200)) : '[медиа]'}
+                ${msg.has_media ? `<br><span class="badge bg-info">${msg.media_type}</span>` : ''}
+            </td>
+            <td>${escapeHtml(msg.sender_name || 'Unknown')}</td>
+            <td>${formatDate(msg.message_date)}</td>
+        </tr>
+    `).join('');
+    
+    addLog(`Показано ${results.length} результатов`, 'info');
+}
+
+// Показать галерею медиа
+async function showMediaGallery(chatId = null, mediaType = null) {
+    try {
+        console.log('🖼️ Загрузка галереи медиа:', { chatId, mediaType });
+        const params = new URLSearchParams();
+        if (chatId) params.append('chat_id', chatId);
+        if (mediaType) params.append('media_type', mediaType);
+        params.append('limit', 50);
+        
+        const result = await apiRequest(`/media_gallery?${params.toString()}`);
+        
+        const modal = new bootstrap.Modal(document.getElementById('mediaGalleryModal'));
+        const gallery = document.getElementById('mediaGalleryContent');
+        
+        if (result.media.length === 0) {
+            gallery.innerHTML = '<p class="text-center text-muted">Медиа не найдено</p>';
+        } else {
+            gallery.innerHTML = `
+                <div class="row g-3">
+                    ${result.media.map(msg => `
+                        <div class="col-md-4 col-lg-3">
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
+                                    <p class="card-text text-truncate">${escapeHtml(msg.text_preview || '[медиа]')}</p>
+                                    <span class="badge bg-${getFileTypeBadgeClass(msg.media_type)}">${msg.media_type}</span>
+                                    <small class="d-block mt-2 text-muted">${formatDate(msg.message_date)}</small>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        document.getElementById('mediaGalleryCount').textContent = result.count;
+        modal.show();
+        
+        addLog(`Галерея медиа загружена: ${result.count} элементов`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки галереи:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Копировать RAW данные
+function copyRawData() {
+    const content = document.getElementById('rawDataContent').textContent;
+    navigator.clipboard.writeText(content).then(() => {
+        addLog('RAW данные скопированы в буфер обмена', 'success');
+    }).catch(err => {
+        console.error('Ошибка копирования:', err);
+        alert('Не удалось скопировать');
+    });
+}

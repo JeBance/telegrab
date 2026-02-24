@@ -922,6 +922,267 @@ class DatabaseV6:
         conn.commit()
         conn.close()
 
+    # ============================================================
+    # НОВЫЕ МЕТОДЫ ДЛЯ БД V6
+    # ============================================================
+
+    def get_message_raw_data(self, chat_id: int, message_id: int) -> Optional[Dict]:
+        """Получить полные RAW данные сообщения"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT raw_data FROM messages_raw
+            WHERE chat_id = ? AND message_id = ?
+        ''', (chat_id, message_id))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result['raw_data']:
+            try:
+                return json.loads(result['raw_data'])
+            except:
+                return None
+        return None
+
+    def get_message_edits(self, chat_id: int, message_id: int) -> List[Dict]:
+        """Получить историю редактирований сообщения"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT edit_date, old_text, new_text, old_raw_data
+            FROM message_edits
+            WHERE chat_id = ? AND message_id = ?
+            ORDER BY edit_date DESC
+        ''', (chat_id, message_id))
+
+        results = []
+        for row in cursor.fetchall():
+            data = dict(row)
+            if data.get('old_raw_data'):
+                try:
+                    data['old_raw_data'] = json.loads(data['old_raw_data'])
+                except:
+                    pass
+            results.append(data)
+
+        conn.close()
+        return results
+
+    def get_message_events(self, chat_id: int, message_id: int = None) -> List[Dict]:
+        """Получить события сообщений (удаления, пересылки)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if message_id:
+            cursor.execute('''
+                SELECT event_type, event_date, event_data
+                FROM message_events
+                WHERE chat_id = ? AND message_id = ?
+                ORDER BY event_date DESC
+            ''', (chat_id, message_id))
+        else:
+            cursor.execute('''
+                SELECT message_id, event_type, event_date, event_data
+                FROM message_events
+                WHERE chat_id = ?
+                ORDER BY event_date DESC
+                LIMIT 100
+            ''', (chat_id,))
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def get_files_stats(self) -> Dict:
+        """Получить статистику по файлам"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total_files,
+                COALESCE(SUM(file_size), 0) as total_size,
+                COUNT(DISTINCT file_type) as file_types
+            FROM files
+        ''')
+
+        row = cursor.fetchone()
+        conn.close()
+
+        return {
+            'total_files': row[0] or 0,
+            'total_size': row[1] or 0,
+            'file_types': row[2] or 0
+        }
+
+    def get_files_by_type(self, file_type: str = None, limit: int = 100) -> List[Dict]:
+        """Получить список файлов по типу"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        if file_type:
+            cursor.execute('''
+                SELECT file_id, file_type, file_size, file_name, mime_type, 
+                       width, height, duration, downloaded_path, created_at
+                FROM files
+                WHERE file_type = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (file_type, limit))
+        else:
+            cursor.execute('''
+                SELECT file_id, file_type, file_size, file_name, mime_type,
+                       width, height, duration, downloaded_path, created_at
+                FROM files
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def get_messages_with_media(self, chat_id: int = None, media_type: str = None, 
+                                 limit: int = 100) -> List[Dict]:
+        """Получить сообщения с медиа"""
+        return self.get_messages(chat_id=chat_id, media_type=media_type, limit=limit)
+
+    def get_chat_detailed_stats(self, chat_id: int) -> Dict:
+        """Получить подробную статистику чата"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        stats = {}
+
+        # Основная статистика
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total_messages,
+                COUNT(DISTINCT sender_id) as unique_senders,
+                SUM(CASE WHEN has_media = 1 THEN 1 ELSE 0 END) as messages_with_media,
+                SUM(views) as total_views,
+                COUNT(DISTINCT CASE WHEN has_media = 1 THEN media_type END) as media_types_count
+            FROM message_meta
+            WHERE chat_id = ? AND is_deleted = 0
+        ''', (chat_id,))
+
+        row = cursor.fetchone()
+        stats['total_messages'] = row[0] or 0
+        stats['unique_senders'] = row[1] or 0
+        stats['messages_with_media'] = row[2] or 0
+        stats['total_views'] = row[3] or 0
+        stats['media_types_count'] = row[4] or 0
+
+        # Статистика по типам медиа
+        cursor.execute('''
+            SELECT media_type, COUNT(*) as count
+            FROM message_meta
+            WHERE chat_id = ? AND has_media = 1 AND is_deleted = 0
+            GROUP BY media_type
+        ''', (chat_id,))
+
+        stats['media_types'] = {row[0]: row[1] for row in cursor.fetchall() if row[0]}
+
+        # Статистика по редактированиям
+        cursor.execute('''
+            SELECT COUNT(DISTINCT message_id) as edited_messages
+            FROM message_edits
+            WHERE chat_id = ?
+        ''', (chat_id,))
+
+        stats['edited_messages'] = cursor.fetchone()[0] or 0
+
+        # Статистика по событиям
+        cursor.execute('''
+            SELECT event_type, COUNT(*) as count
+            FROM message_events
+            WHERE chat_id = ?
+            GROUP BY event_type
+        ''', (chat_id,))
+
+        stats['events'] = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Информация о чате
+        chat_info = self.get_chat(chat_id)
+        stats['chat_info'] = chat_info
+
+        conn.close()
+        return stats
+
+    def search_messages_advanced(self, query: str = None, chat_id: int = None,
+                                  sender_id: int = None, has_media: bool = None,
+                                  media_type: str = None, date_from: str = None,
+                                  date_to: str = None, limit: int = 100) -> List[Dict]:
+        """Расширенный поиск сообщений"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query_sql = '''
+            SELECT m.chat_id, m.message_id, m.raw_data, m.saved_at,
+                   meta.sender_name, meta.sender_id, meta.message_date,
+                   meta.has_media, meta.media_type, meta.text_preview,
+                   meta.views, c.title as chat_title
+            FROM messages_raw m
+            JOIN message_meta meta ON m.chat_id = meta.chat_id AND m.message_id = meta.message_id
+            LEFT JOIN chats c ON m.chat_id = c.chat_id
+            WHERE meta.is_deleted = 0
+        '''
+        params = []
+
+        if query:
+            query_sql += ' AND meta.text_preview LIKE ?'
+            params.append(f'%{query}%')
+
+        if chat_id:
+            query_sql += ' AND m.chat_id = ?'
+            params.append(chat_id)
+
+        if sender_id:
+            query_sql += ' AND meta.sender_id = ?'
+            params.append(sender_id)
+
+        if has_media is not None:
+            query_sql += ' AND meta.has_media = ?'
+            params.append(1 if has_media else 0)
+
+        if media_type:
+            query_sql += ' AND meta.media_type = ?'
+            params.append(media_type)
+
+        if date_from:
+            query_sql += ' AND meta.message_date >= ?'
+            params.append(date_from)
+
+        if date_to:
+            query_sql += ' AND meta.message_date <= ?'
+            params.append(date_to)
+
+        query_sql += ' ORDER BY meta.message_date DESC LIMIT ?'
+        params.append(limit)
+
+        cursor.execute(query_sql, params)
+        results = []
+
+        for row in cursor.fetchall():
+            data = dict(row)
+            if data.get('raw_data'):
+                try:
+                    data['raw_data'] = json.loads(data['raw_data'])
+                except:
+                    pass
+            results.append(data)
+
+        conn.close()
+        return results
+
 
 # Глобальный экземпляр
 db_v6 = DatabaseV6()
