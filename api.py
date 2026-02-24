@@ -29,6 +29,24 @@ LOG_WARNING = logging.WARNING
 LOG_ERROR = logging.ERROR
 LOG_CRITICAL = logging.CRITICAL
 
+# Исключения Telethon для обработки ошибок API (нужны для retry_on_error)
+from telethon.errors import (
+    FloodWaitError,
+    ChannelPrivateError,
+    ChannelInvalidError,
+    ChatAdminRequiredError,
+    UserNotParticipantError,
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError,
+    AuthKeyUnregisteredError,
+    AuthKeyDuplicatedError,
+    AccessTokenExpiredError,
+    BadRequestError,
+    UnauthorizedError,
+    RPCError
+)
+
 
 # ==================== RETRY ЛОГИКА ====================
 async def retry_on_error(func, *args, max_retries=3, base_delay=1.0, exceptions=(FloodWaitError,), **kwargs):
@@ -78,30 +96,13 @@ async def retry_on_error(func, *args, max_retries=3, base_delay=1.0, exceptions=
     if last_exception:
         raise last_exception
 
+
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import uvicorn
-
-# Исключения Telethon для обработки ошибок API
-from telethon.errors import (
-    FloodWaitError,
-    ChannelPrivateError,
-    ChannelInvalidError,
-    ChatAdminRequiredError,
-    UserNotParticipantError,
-    SessionPasswordNeededError,
-    PhoneCodeInvalidError,
-    PhoneCodeExpiredError,
-    AuthKeyUnregisteredError,
-    AuthKeyDuplicatedError,
-    AccessTokenExpiredError,
-    BadRequestError,
-    UnauthorizedError,
-    RPCError
-)
 
 # ==================== КОНФИГУРАЦИЯ ====================
 def load_config():
