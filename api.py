@@ -1328,15 +1328,26 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 if chat_id_str.startswith('-100'):
                     chat = await client.get_entity(int(chat_id_str))
                 else:
-                    chat = await client.get_entity(int(chat_id_str))
-            except (ValueError, TypeError):
+                    # Пробуем оба формата: с -100 и без
+                    try:
+                        chat = await client.get_entity(int(chat_id_str))
+                    except:
+                        # Пробуем с -100
+                        chat = await client.get_entity(int(f'-100{chat_id_str}'))
+            except (ValueError, TypeError, Exception) as e:
+                print(f"❌ Ошибка получения чата {chat_id}: {e}")
                 # Если не числовой ID — пробуем как строку
-                chat = await client.get_entity(chat_id_str)
+                try:
+                    chat = await client.get_entity(chat_id_str)
+                except Exception as e2:
+                    print(f"❌ Не удалось получить чат по строке: {e2}")
+                    raise Exception(f"Чат не найден: {chat_id}")
 
         if not chat:
             raise Exception(f"Чат не найден: {chat_id}")
 
         chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat_id}"
+        print(f"✅ Чат получен: {chat_title} (ID: {chat_id})")
 
         status = db.get_loading_status(chat_id)
         last_loaded_id = status.get('last_loaded_id', 0)
