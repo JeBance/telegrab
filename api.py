@@ -1335,26 +1335,33 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 else:
                     # Пробуем оба формата: с -100 и без
                     try:
-                        print(f"📡 Получение по ID (бот): {chat_id_str}")
+                        print(f"📡 Получение по ID (бот/группа): {chat_id_str}")
                         chat = await client.get_entity(int(chat_id_str))
                     except Exception as e1:
                         # Пробуем с -100
-                        print(f"⚠️  Не удалось получить как бот, пробуем как канал: -100{chat_id_str}")
+                        print(f"⚠️  Не удалось получить как бот/группа, пробуем как канал: -100{chat_id_str}")
                         chat = await client.get_entity(int(f'-100{chat_id_str}'))
             except (ValueError, TypeError, Exception) as e:
                 print(f"❌ Ошибка получения чата {chat_id}: {e}")
-                # Если не числовой ID — пробуем как строку
+                # Если не числовой ID — пробуем как строку (username)
                 try:
+                    print(f"📡 Получение по строке: {chat_id_str}")
                     chat = await client.get_entity(chat_id_str)
                 except Exception as e2:
                     print(f"❌ Не удалось получить чат по строке: {e2}")
-                    raise Exception(f"Чат не найден: {chat_id}")
+                    # Пробуем как бота по username
+                    try:
+                        print(f"📡 Получение как бот: @{chat_id_str}")
+                        chat = await client.get_entity(f'@{chat_id_str}')
+                    except Exception as e3:
+                        print(f"❌ Не удалось получить как бот: {e3}")
+                        raise Exception(f"Чат не найден: {chat_id}")
 
         if not chat:
             raise Exception(f"Чат не найден: {chat_id}")
 
         chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat_id}"
-        print(f"✅ Чат получен: {chat_title} (ID: {chat_id})")
+        print(f"✅ Чат получен: {chat_title} (ID: {chat_id}, type: {type(chat).__name__})")
 
         status = db.get_loading_status(chat_id)
         last_loaded_id = status.get('last_loaded_id', 0)
