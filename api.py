@@ -29,6 +29,55 @@ LOG_WARNING = logging.WARNING
 LOG_ERROR = logging.ERROR
 LOG_CRITICAL = logging.CRITICAL
 
+
+# ==================== RETRY ЛОГИКА ====================
+async def retry_on_error(func, *args, max_retries=3, base_delay=1.0, exceptions=(FloodWaitError,), **kwargs):
+    """
+    Повторный вызов функции при временных ошибках.
+    
+    Args:
+        func: Асинхронная функция для вызова
+        *args: Позиционные аргументы для функции
+        max_retries: Максимальное количество попыток
+        base_delay: Базовая задержка между попытками (секунды)
+        exceptions: Кортеж исключений для обработки
+        **kwargs: Именованные аргументы для функции
+    
+    Returns:
+        Результат вызова функции
+    
+    Raises:
+        Последнее исключение если все попытки исчерпаны
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        try:
+            return await func(*args, **kwargs)
+        except FloodWaitError as e:
+            # FloodWait обрабатывается всегда - ждём указанное время
+            wait_time = e.seconds
+            logger.warning(f"FloodWait (попытка {attempt + 1}/{max_retries}): ожидание {wait_time} секунд")
+            await asyncio.sleep(wait_time)
+            last_exception = e
+            continue
+        except exceptions as e:
+            # Другие временные ошибки с экспоненциальной задержкой
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # Экспоненциальная задержка
+                logger.warning(f"Временная ошибка (попытка {attempt + 1}/{max_retries}): {e}. Ожидание {delay}с")
+                await asyncio.sleep(delay)
+                last_exception = e
+            else:
+                logger.error(f"Исчерпаны попытки ({max_retries}): {e}")
+                raise
+        except Exception:
+            # Неизвестные ошибки не повторяем
+            raise
+    
+    if last_exception:
+        raise last_exception
+
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -1425,36 +1474,36 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
         # Если это username (начинается с @)
         if chat_id_str.startswith('@'):
-            print(f"📡 Получение по username: @{chat_id_str[1:]}")
-            chat = await client.get_entity(chat_id_str)
+            logger.debug(f"Получение по username: @{chat_id_str[1:]}")
+            chat = await retry_on_error(client.get_entity, chat_id_str, max_retries=3)
         else:
             # Пробуем получить по ID
             try:
                 # Для супергрупп и каналов ID может быть с -100
                 if chat_id_str.startswith('-100'):
                     logger.debug(f"Получение по ID (канал): {chat_id_str}")
-                    chat = await client.get_entity(int(chat_id_str))
+                    chat = await retry_on_error(client.get_entity, int(chat_id_str), max_retries=3)
                 else:
                     # Пробуем оба формата: с -100 и без
                     try:
                         logger.debug(f"Получение по ID (бот/группа): {chat_id_str}")
-                        chat = await client.get_entity(int(chat_id_str))
+                        chat = await retry_on_error(client.get_entity, int(chat_id_str), max_retries=3)
                     except Exception as e1:
                         # Пробуем с -100
                         logger.debug(f"Не удалось получить как бот/группа, пробуем как канал: -100{chat_id_str}")
-                        chat = await client.get_entity(int(f'-100{chat_id_str}'))
+                        chat = await retry_on_error(client.get_entity, int(f'-100{chat_id_str}'), max_retries=3)
             except (ValueError, TypeError, Exception) as e:
                 logger.warning(f"Ошибка получения чата {chat_id}: {e}")
                 # Если не числовой ID — пробуем как строку (username)
                 try:
                     logger.debug(f"Получение по строке: {chat_id_str}")
-                    chat = await client.get_entity(chat_id_str)
+                    chat = await retry_on_error(client.get_entity, chat_id_str, max_retries=3)
                 except Exception as e2:
                     logger.warning(f"Не удалось получить чат по строке: {e2}")
                     # Пробуем как бота по username
                     try:
                         logger.debug(f"Получение как бот: @{chat_id_str}")
-                        chat = await client.get_entity(f'@{chat_id_str}')
+                        chat = await retry_on_error(client.get_entity, f'@{chat_id_str}', max_retries=3)
                     except Exception as e3:
                         logger.warning(f"Не удалось получить как бот: {e3}")
                         raise Exception(f"Чат не найден: {chat_id}")
@@ -1500,10 +1549,13 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 # Используем offset_id для загрузки истории (сообщения ДО этого ID)
                 # offset_id: возвращает сообщения с ID < X (старые) ✅ для истории
                 # min_id: возвращает сообщения с ID > X (новые) ✅ для новых сообщений
-                messages = await client.get_messages(
+                messages = await retry_on_error(
+                    client.get_messages,
                     chat,
                     limit=request_limit,
-                    offset_id=last_loaded_id
+                    offset_id=last_loaded_id,
+                    max_retries=3,
+                    base_delay=1.0
                 )
             except FloodWaitError as e:
                 # Telegram требует ожидания при превышении лимита запросов
