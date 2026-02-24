@@ -1308,31 +1308,38 @@ async def join_chat(client, chat_identifier):
 
 async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=None):
     """Загрузка истории с дозированием запросов
-    
+
     ВАЖНО: Используем min_id вместо offset_id!
     - offset_id: возвращает сообщения с ID < X (старые) ❌
     - min_id: возвращает сообщения с ID > X (новые) ✅
     """
     try:
+        print(f"📚 Загрузка истории для chat_id={chat_id}, limit={limit}")
+        
         # Пробуем получить чат разными способами
         chat = None
         chat_id_str = str(chat_id)
+        print(f"🔍 Поиск чата: {chat_id_str}")
 
         # Если это username (начинается с @)
         if chat_id_str.startswith('@'):
+            print(f"📡 Получение по username: @{chat_id_str[1:]}")
             chat = await client.get_entity(chat_id_str)
         else:
             # Пробуем получить по ID
             try:
                 # Для супергрупп и каналов ID может быть с -100
                 if chat_id_str.startswith('-100'):
+                    print(f"📡 Получение по ID (канал): {chat_id_str}")
                     chat = await client.get_entity(int(chat_id_str))
                 else:
                     # Пробуем оба формата: с -100 и без
                     try:
+                        print(f"📡 Получение по ID (бот): {chat_id_str}")
                         chat = await client.get_entity(int(chat_id_str))
-                    except:
+                    except Exception as e1:
                         # Пробуем с -100
+                        print(f"⚠️  Не удалось получить как бот, пробуем как канал: -100{chat_id_str}")
                         chat = await client.get_entity(int(f'-100{chat_id_str}'))
             except (ValueError, TypeError, Exception) as e:
                 print(f"❌ Ошибка получения чата {chat_id}: {e}")
