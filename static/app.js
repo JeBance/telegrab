@@ -332,11 +332,28 @@ async function loadChats() {
         });
         
         console.log('📊 Статистика чатов:', chatStats);
-        
+
         // Объединяем данные
         allChatsData = (dialogsData.dialogs || []).map(dialog => {
-            const stats = chatStats[dialog.title] || { message_count: 0, fully_loaded: false };
+            // Пытаемся найти по title
+            let stats = chatStats[dialog.title];
             
+            // Если не нашли, пробуем по chat_id
+            if (!stats) {
+                // Ищем чат с таким ID в статистике
+                for (const [title, data] of Object.entries(chatStats)) {
+                    if (data.ids.includes(String(dialog.id))) {
+                        stats = data;
+                        console.log(`🔍 Найдено совпадение по ID для ${dialog.title}: ${title}`);
+                        break;
+                    }
+                }
+            }
+            
+            if (!stats) {
+                stats = { message_count: 0, fully_loaded: false };
+            }
+
             return {
                 id: dialog.id,
                 title: dialog.title,
@@ -346,8 +363,9 @@ async function loadChats() {
                 fully_loaded: stats.fully_loaded
             };
         });
-        
+
         console.log(`✅ Загружено ${allChatsData.length} чатов`);
+        console.log('📊 Данные чатов:', allChatsData.map(c => `${c.title}: ${c.message_count} сообщений`).join(', '));
         
         // Применяем фильтры (это обновит таблицу)
         applyChatFilters();
