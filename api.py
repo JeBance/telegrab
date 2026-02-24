@@ -20,6 +20,24 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import uvicorn
 
+# Исключения Telethon для обработки ошибок API
+from telethon.errors import (
+    FloodWaitError,
+    ChannelPrivateError,
+    ChannelInvalidError,
+    ChatAdminRequiredError,
+    UserNotParticipantError,
+    SessionPasswordNeededError,
+    PhoneCodeInvalidError,
+    PhoneCodeExpiredError,
+    AuthKeyUnregisteredError,
+    AuthKeyDuplicatedError,
+    AccessTokenExpiredError,
+    BadRequestError,
+    UnauthorizedError,
+    RPCError
+)
+
 # ==================== КОНФИГУРАЦИЯ ====================
 def load_config():
     """Загрузка конфигурации из .env файла"""
@@ -795,8 +813,17 @@ async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100, inc
 
         print(f"✅ Найдено диалогов: {len(dialogs_list)}")
         return {'count': len(dialogs_list), 'dialogs': dialogs_list}
+    except FloodWaitError as e:
+        print(f"⏳ FloodWait при получении диалогов: ожидание {e.seconds} секунд")
+        raise HTTPException(status_code=429, detail=f"Слишком много запросов. Повторите через {e.seconds} секунд")
+    except AuthKeyUnregisteredError as e:
+        print(f"❌ Сессия недействительна: {e}")
+        raise HTTPException(status_code=401, detail="Требуется повторная авторизация")
     except HTTPException:
         raise
+    except RPCError as e:
+        print(f"❌ RPC ошибка при получении диалогов: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка Telegram API: {str(e)}")
     except Exception as e:
         print(f"❌ Ошибка получения диалогов: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1461,8 +1488,35 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                     limit=request_limit,
                     offset_id=last_loaded_id
                 )
+            except FloodWaitError as e:
+                # Telegram требует ожидания при превышении лимита запросов
+                wait_time = e.seconds
+                print(f"⏳ FloodWait: ожидание {wait_time} секунд...")
+                await asyncio.sleep(wait_time)
+                continue
+            except (ChannelPrivateError, ChannelInvalidError) as e:
+                print(f"❌ Чат недоступен (приватный/неверный): {e}")
+                break
+            except ChatAdminRequiredError as e:
+                print(f"❌ Требуются права администратора: {e}")
+                break
+            except UserNotParticipantError as e:
+                print(f"❌ Бот не является участником чата: {e}")
+                break
+            except AuthKeyUnregisteredError as e:
+                print(f"❌ Сессия недействительна: {e}")
+                raise
+            except AuthKeyDuplicatedError as e:
+                print(f"❌ Сессия дублируется: {e}")
+                raise
+            except (BadRequestError, UnauthorizedError) as e:
+                print(f"❌ Ошибка авторизации: {e}")
+                break
+            except RPCError as e:
+                print(f"❌ RPC ошибка Telegram: {e}")
+                break
             except Exception as e:
-                print(f"⚠️ Ошибка загрузки: {e}")
+                print(f"⚠️ Неизвестная ошибка загрузки: {e}")
                 break
 
             if not messages:
@@ -1588,6 +1642,18 @@ async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=
 
         return {'chat_id': chat_id, 'chat_title': chat_title, 'missed_messages': message_count}
 
+    except FloodWaitError as e:
+        print(f"⏳ FloodWait при догрузке пропущенных: ожидание {e.seconds} секунд...")
+        raise
+    except (ChannelPrivateError, ChannelInvalidError) as e:
+        print(f"❌ Чат недоступен при догрузке: {e}")
+        raise
+    except AuthKeyUnregisteredError as e:
+        print(f"❌ Сессия недействительна: {e}")
+        raise
+    except RPCError as e:
+        print(f"❌ RPC ошибка при догрузке: {e}")
+        raise
     except Exception as e:
         print(f"❌ Ошибка догрузки пропущенных: {e}")
         raise
