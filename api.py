@@ -9,9 +9,25 @@ import json
 import asyncio
 import uuid
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
+
+# Настройка логирования с уровнями
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('telegrab')
+
+# Уровни для часто используемых сообщений
+LOG_DEBUG = logging.DEBUG
+LOG_INFO = logging.INFO
+LOG_WARNING = logging.WARNING
+LOG_ERROR = logging.ERROR
+LOG_CRITICAL = logging.CRITICAL
 
 from fastapi import FastAPI, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect, Security
 from fastapi.security import APIKeyHeader
@@ -1416,38 +1432,38 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
             try:
                 # Для супергрупп и каналов ID может быть с -100
                 if chat_id_str.startswith('-100'):
-                    print(f"📡 Получение по ID (канал): {chat_id_str}")
+                    logger.debug(f"Получение по ID (канал): {chat_id_str}")
                     chat = await client.get_entity(int(chat_id_str))
                 else:
                     # Пробуем оба формата: с -100 и без
                     try:
-                        print(f"📡 Получение по ID (бот/группа): {chat_id_str}")
+                        logger.debug(f"Получение по ID (бот/группа): {chat_id_str}")
                         chat = await client.get_entity(int(chat_id_str))
                     except Exception as e1:
                         # Пробуем с -100
-                        print(f"⚠️  Не удалось получить как бот/группа, пробуем как канал: -100{chat_id_str}")
+                        logger.debug(f"Не удалось получить как бот/группа, пробуем как канал: -100{chat_id_str}")
                         chat = await client.get_entity(int(f'-100{chat_id_str}'))
             except (ValueError, TypeError, Exception) as e:
-                print(f"❌ Ошибка получения чата {chat_id}: {e}")
+                logger.warning(f"Ошибка получения чата {chat_id}: {e}")
                 # Если не числовой ID — пробуем как строку (username)
                 try:
-                    print(f"📡 Получение по строке: {chat_id_str}")
+                    logger.debug(f"Получение по строке: {chat_id_str}")
                     chat = await client.get_entity(chat_id_str)
                 except Exception as e2:
-                    print(f"❌ Не удалось получить чат по строке: {e2}")
+                    logger.warning(f"Не удалось получить чат по строке: {e2}")
                     # Пробуем как бота по username
                     try:
-                        print(f"📡 Получение как бот: @{chat_id_str}")
+                        logger.debug(f"Получение как бот: @{chat_id_str}")
                         chat = await client.get_entity(f'@{chat_id_str}')
                     except Exception as e3:
-                        print(f"❌ Не удалось получить как бот: {e3}")
+                        logger.warning(f"Не удалось получить как бот: {e3}")
                         raise Exception(f"Чат не найден: {chat_id}")
 
         if not chat:
             raise Exception(f"Чат не найден: {chat_id}")
 
         chat_title = getattr(chat, 'title', None) or getattr(chat, 'username', None) or f"chat_{chat_id}"
-        print(f"✅ Чат получен: {chat_title} (ID: {chat_id}, type: {type(chat).__name__})")
+        logger.info(f"Чат получен: {chat_title} (ID: {chat_id}, type: {type(chat).__name__})")
 
         status = db.get_loading_status(chat_id)
         last_loaded_id = status.get('last_loaded_id', 0)
@@ -1463,9 +1479,10 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
         conn.close()
         if result:
             last_loaded_id = result
-            print(f"📊 MAX(message_id) в БД: {last_loaded_id}")
+            logger.debug(f"MAX(message_id) в БД: {last_loaded_id}")
 
         if status.get('fully_loaded', 0) == 1 and limit == 0:
+            logger.info(f"Чат {chat_id} уже полностью загружен")
             return {'chat_id': chat_id, 'chat_title': chat_title, 'already_loaded': True}
 
         message_count = 0
@@ -1491,32 +1508,32 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
             except FloodWaitError as e:
                 # Telegram требует ожидания при превышении лимита запросов
                 wait_time = e.seconds
-                print(f"⏳ FloodWait: ожидание {wait_time} секунд...")
+                logger.warning(f"FloodWait: ожидание {wait_time} секунд...")
                 await asyncio.sleep(wait_time)
                 continue
             except (ChannelPrivateError, ChannelInvalidError) as e:
-                print(f"❌ Чат недоступен (приватный/неверный): {e}")
+                logger.error(f"Чат недоступен (приватный/неверный): {e}")
                 break
             except ChatAdminRequiredError as e:
-                print(f"❌ Требуются права администратора: {e}")
+                logger.error(f"Требуются права администратора: {e}")
                 break
             except UserNotParticipantError as e:
-                print(f"❌ Бот не является участником чата: {e}")
+                logger.error(f"Бот не является участником чата: {e}")
                 break
             except AuthKeyUnregisteredError as e:
-                print(f"❌ Сессия недействительна: {e}")
+                logger.critical(f"Сессия недействительна: {e}")
                 raise
             except AuthKeyDuplicatedError as e:
-                print(f"❌ Сессия дублируется: {e}")
+                logger.critical(f"Сессия дублируется: {e}")
                 raise
             except (BadRequestError, UnauthorizedError) as e:
-                print(f"❌ Ошибка авторизации: {e}")
+                logger.error(f"Ошибка авторизации: {e}")
                 break
             except RPCError as e:
-                print(f"❌ RPC ошибка Telegram: {e}")
+                logger.error(f"RPC ошибка Telegram: {e}")
                 break
             except Exception as e:
-                print(f"⚠️ Неизвестная ошибка загрузки: {e}")
+                logger.error(f"Неизвестная ошибка загрузки: {e}")
                 break
 
             if not messages:
@@ -1575,8 +1592,20 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
         return {'chat_id': chat_id, 'chat_title': chat_title, 'new_messages': message_count, 'fully_loaded': fully_loaded}
 
+    except FloodWaitError as e:
+        logger.warning(f"FloodWait при загрузке истории: ожидание {e.seconds} секунд")
+        raise
+    except (ChannelPrivateError, ChannelInvalidError) as e:
+        logger.error(f"Чат недоступен при загрузке истории: {e}")
+        raise
+    except AuthKeyUnregisteredError as e:
+        logger.critical(f"Сессия недействительна: {e}")
+        raise
+    except RPCError as e:
+        logger.error(f"RPC ошибка при загрузке истории: {e}")
+        raise
     except Exception as e:
-        print(f"❌ Ошибка загрузки истории: {e}")
+        logger.error(f"Ошибка загрузки истории: {e}")
         raise
 
 async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=500, task_id=None):
@@ -1643,19 +1672,19 @@ async def load_missed_messages_for_chat(client, chat_id, since_date=None, limit=
         return {'chat_id': chat_id, 'chat_title': chat_title, 'missed_messages': message_count}
 
     except FloodWaitError as e:
-        print(f"⏳ FloodWait при догрузке пропущенных: ожидание {e.seconds} секунд...")
+        logger.warning(f"FloodWait при догрузке пропущенных: ожидание {e.seconds} секунд...")
         raise
     except (ChannelPrivateError, ChannelInvalidError) as e:
-        print(f"❌ Чат недоступен при догрузке: {e}")
+        logger.error(f"Чат недоступен при догрузке: {e}")
         raise
     except AuthKeyUnregisteredError as e:
-        print(f"❌ Сессия недействительна: {e}")
+        logger.critical(f"Сессия недействительна: {e}")
         raise
     except RPCError as e:
-        print(f"❌ RPC ошибка при догрузке: {e}")
+        logger.error(f"RPC ошибка при догрузке: {e}")
         raise
     except Exception as e:
-        print(f"❌ Ошибка догрузки пропущенных: {e}")
+        logger.error(f"Ошибка догрузки пропущенных: {e}")
         raise
 
 # ==================== ЗАПУСК TELEGRAM CLIENT ====================
