@@ -264,7 +264,7 @@ def create_v6_routes(app: FastAPI, get_api_key, db_v6, CONFIG):
     @app.get("/v6/export/{chat_id}")
     async def export_chat_v6(
         chat_id: int,
-        format: str = Query('json', regex='^(json|raw|csv)$'),
+        format: str = Query('json', pattern='^(json|raw|csv)$'),
         api_key: str = Depends(get_api_key)
     ):
         """
