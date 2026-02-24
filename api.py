@@ -1394,13 +1394,13 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
                 request_limit = limit - message_count
 
             try:
-                # ИСПОЛЬЗУЕМ min_id ВМЕСТО offset_id!
-                # offset_id: возвращает сообщения с ID < X (старые) ❌
-                # min_id: возвращает сообщения с ID > X (новые) ✅
+                # Используем offset_id для загрузки истории (сообщения ДО этого ID)
+                # offset_id: возвращает сообщения с ID < X (старые) ✅ для истории
+                # min_id: возвращает сообщения с ID > X (новые) ✅ для новых сообщений
                 messages = await client.get_messages(
                     chat,
                     limit=request_limit,
-                    min_id=last_loaded_id
+                    offset_id=last_loaded_id
                 )
             except Exception as e:
                 print(f"⚠️ Ошибка загрузки: {e}")
