@@ -714,6 +714,32 @@ async def remove_tracked_chat(chat_id: int, api_key: str = Depends(get_api_key))
     result = db.remove_tracked_chat(chat_id)
     return {'status': 'ok', 'removed': result}
 
+@app.post("/clear_chat/{chat_id}")
+async def clear_chat(chat_id: int, api_key: str = Depends(get_api_key)):
+    """Очистить сообщения чата из БД"""
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        
+        # Удаляем сообщения
+        cursor.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
+        deleted = cursor.rowcount
+        
+        # Сбрасываем статус загрузки
+        cursor.execute('''
+            UPDATE chat_loading_status 
+            SET last_loaded_id = 0, total_loaded = 0, fully_loaded = 0, last_loading_date = NULL
+            WHERE chat_id = ?
+        ''', (chat_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        return {'status': 'ok', 'deleted': deleted, 'message': f'Удалено {deleted} сообщений чата {chat_id}'}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/dialogs")
 async def get_dialogs(api_key: str = Depends(get_api_key), limit: int = 100, include_private: bool = False):
     """Получить список диалогов из Telegram"""

@@ -435,9 +435,14 @@ function renderChatsTable(chats) {
                 ${chat.last_message_date ? formatDate(chat.last_message_date) : '-'}
             </td>
             <td>
-                <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')">
-                    <i class="bi bi-download"></i> Загрузить
-                </button>
+                <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')" title="Загрузить историю">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearChat('${chat.id}', '${escapeHtml(chat.title)}')" title="Очистить чат из БД">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </td>
         </tr>
     `).join('');
@@ -508,6 +513,24 @@ async function loadChatHistory(chatId) {
         refreshQueue();
     } catch (e) {
         console.error('❌ Ошибка загрузки:', e);
+        alert('Ошибка: ' + e.message);
+    }
+}
+
+// Очистка чата из БД
+async function clearChat(chatId, chatTitle) {
+    if (!confirm(`Вы уверены что хотите очистить чат "${chatTitle}" из базы данных?\n\nВсе сообщения этого чата будут удалены.\n\nЭто действие необратимо!`)) return;
+    
+    try {
+        console.log('🗑️ Очистка чата:', chatId);
+        const result = await apiRequest(`/clear_chat/${chatId}`, { method: 'POST' });
+        console.log('✅ Результат:', result);
+        addLog(`Чат "${chatTitle}" очищен: удалено ${result.deleted} сообщений`, 'success');
+        
+        // Перезагружаем таблицу
+        await loadChats();
+    } catch (e) {
+        console.error('❌ Ошибка очистки:', e);
         alert('Ошибка: ' + e.message);
     }
 }
