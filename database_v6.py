@@ -573,6 +573,353 @@ class DatabaseV6:
 
         return export_data
 
+    # ============================================================
+    # МЕТОДЫ ДЛЯ СОВМЕСТИМОСТИ (API v4/v5)
+    # ============================================================
+
+    def save_message(self, message_id, chat_id, chat_title, text, sender_name, message_date,
+                     media_type=None, file_id=None, file_name=None, file_size=None, sender_id=None):
+        """
+        Сохранение сообщения в формате совместимом со старым API
+
+        Args:
+            message_id: ID сообщения
+            chat_id: ID чата
+            chat_title: Заголовок чата
+            text: Текст сообщения
+            sender_name: Имя отправителя
+            message_date: Дата сообщения
+            media_type: Тип медиа (photo, video, document, etc.)
+            file_id: ID файла
+            file_name: Имя файла
+            file_size: Размер файла
+            sender_id: ID отправителя
+        """
+        # Сохраняем чат если не существует
+        self.save_chat(chat_id, title=chat_title)
+
+        # Формируем RAW данные (упрощённая структура для совместимости)
+        raw_data = {
+            'id': message_id,
+            'chat_id': chat_id,
+            'chat_title': chat_title,
+            'text': text,
+            'sender_name': sender_name,
+            'sender_id': sender_id,
+            'date': message_date,
+            'media_type': media_type,
+            'file_id': file_id,
+            'file_name': file_name,
+            'file_size': file_size
+        }
+
+        # Формируем метаданные
+        meta = {
+            'sender_id': sender_id,
+            'sender_name': sender_name,
+            'message_date': message_date,
+            'has_media': media_type is not None,
+            'media_type': media_type,
+            'text_preview': text[:500] if text else '',
+            'has_forward': False,
+            'has_reply': False,
+            'views': 0
+        }
+
+        # Формируем список файлов
+        files = []
+        if file_id:
+            files.append({
+                'file_id': file_id,
+                'file_type': media_type,
+                'file_size': file_size,
+                'file_name': file_name
+            })
+
+        return self.save_message_raw(chat_id, message_id, raw_data, meta, files)
+
+    def update_loading_status(self, chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded=False):
+        """Обновление статуса загрузки чата (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO chat_loading_status
+            (chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded, last_loading_date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (chat_id, last_loaded_id, last_message_date, total_loaded,
+              1 if fully_loaded else 0, datetime.now().isoformat()))
+
+        conn.commit()
+        conn.close()
+
+    def get_loading_status(self, chat_id):
+        """Получить статус загрузки чата (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM chat_loading_status WHERE chat_id = ?', (chat_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return dict(result)
+        return {'chat_id': chat_id, 'last_loaded_id': 0, 'total_loaded': 0, 'fully_loaded': 0}
+
+    def get_last_message_date_in_chat(self, chat_id):
+        """Получить дату последнего сообщения в чате (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT MAX(message_date) FROM message_meta
+            WHERE chat_id = ? AND is_deleted = 0
+        ''', (chat_id,))
+        result = cursor.fetchone()[0]
+        conn.close()
+
+        if result:
+            try:
+                date_str = str(result).replace('Z', '+00:00')
+                if '.' in date_str:
+                    date_str = date_str.split('.')[0] + date_str[-6:] if '+' in date_str else date_str.split('.')[0]
+                return datetime.fromisoformat(date_str)
+            except Exception:
+                return None
+        return None
+
+    def get_chats_with_messages(self):
+        """Получить список чатов с сообщениями (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT DISTINCT m.chat_id, c.title as chat_title, MAX(m.message_date) as last_message_date
+            FROM message_meta m
+            LEFT JOIN chats c ON m.chat_id = c.chat_id
+            WHERE m.is_deleted = 0
+            GROUP BY m.chat_id
+            ORDER BY last_message_date DESC
+        ''')
+
+        results = []
+        for row in cursor.fetchall():
+            data = dict(row)
+            results.append({
+                'chat_id': data['chat_id'],
+                'chat_title': data.get('chat_title') or data.get('title') or f"chat_{data['chat_id']}",
+                'last_message_date': data['last_message_date']
+            })
+
+        conn.close()
+        return results
+
+    def get_messages(self, chat_id=None, limit=100, offset=0, search=None, media_type=None):
+        """
+        Получение сообщений в формате совместимом со старым API
+
+        Возвращает список сообщений с полями:
+        - message_id, chat_id, chat_title, text, sender_name, message_date
+        - media_type, file_id, file_name, file_size
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        query = '''
+            SELECT m.chat_id, m.message_id, m.raw_data, m.saved_at,
+                   meta.sender_name, meta.sender_id, meta.message_date,
+                   meta.has_media, meta.media_type, meta.text_preview,
+                   meta.views, c.title as chat_title
+            FROM messages_raw m
+            JOIN message_meta meta ON m.chat_id = meta.chat_id AND m.message_id = meta.message_id
+            LEFT JOIN chats c ON m.chat_id = c.chat_id
+            WHERE meta.is_deleted = 0
+        '''
+        params = []
+
+        if chat_id:
+            query += ' AND m.chat_id = ?'
+            params.append(chat_id)
+
+        if search:
+            query += ' AND meta.text_preview LIKE ?'
+            params.append(f'%{search}%')
+
+        if media_type:
+            query += ' AND meta.media_type = ?'
+            params.append(media_type)
+
+        query += ' ORDER BY meta.message_date DESC LIMIT ? OFFSET ?'
+        params.extend([limit, offset])
+
+        cursor.execute(query, params)
+        results = []
+
+        for row in cursor.fetchall():
+            data = dict(row)
+            # Парсим RAW данные если есть
+            raw = {}
+            if data.get('raw_data'):
+                try:
+                    raw = json.loads(data['raw_data'])
+                except:
+                    pass
+
+            # Формируем результат в старом формате
+            results.append({
+                'id': data.get('id'),
+                'message_id': data['message_id'],
+                'chat_id': data['chat_id'],
+                'chat_title': data.get('chat_title') or raw.get('chat_title') or f"chat_{data['chat_id']}",
+                'text': raw.get('text') or data.get('text_preview') or '',
+                'sender_name': data.get('sender_name') or raw.get('sender_name') or 'Unknown',
+                'sender_id': data.get('sender_id') or raw.get('sender_id'),
+                'message_date': data['message_date'],
+                'saved_at': data.get('saved_at'),
+                'media_type': data.get('media_type') or raw.get('media_type'),
+                'file_id': raw.get('file_id'),
+                'file_name': raw.get('file_name'),
+                'file_size': raw.get('file_size'),
+                'has_media': bool(data.get('has_media')),
+                'views': data.get('views')
+            })
+
+        conn.close()
+        return results
+
+    def get_chats(self):
+        """Получение списка чатов со статистикой (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT
+                m.chat_id,
+                COALESCE(c.title, 'Unknown') as chat_title,
+                MAX(m.message_date) as last_message,
+                COUNT(*) as message_count,
+                COALESCE(s.fully_loaded, 0) as fully_loaded,
+                COALESCE(s.total_loaded, 0) as total_loaded
+            FROM message_meta m
+            LEFT JOIN chats c ON m.chat_id = c.chat_id
+            LEFT JOIN chat_loading_status s ON m.chat_id = s.chat_id
+            WHERE m.is_deleted = 0
+            GROUP BY m.chat_id
+            ORDER BY last_message DESC
+        ''')
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def get_tracked_chats(self):
+        """Получить список отслеживаемых чатов (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('''
+            SELECT t.chat_id, t.chat_title, t.chat_type, t.enabled, t.added_at,
+                   COALESCE(s.total_loaded, 0) as total_loaded,
+                   COALESCE(s.fully_loaded, 0) as fully_loaded,
+                   COALESCE(s.last_loaded_id, 0) as last_loaded_id,
+                   s.last_message_date,
+                   s.last_loading_date
+            FROM tracked_chats t
+            LEFT JOIN chat_loading_status s ON t.chat_id = s.chat_id
+            ORDER BY t.added_at DESC
+        ''')
+
+        results = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return results
+
+    def add_tracked_chat(self, chat_id, chat_title, chat_type):
+        """Добавить чат в список отслеживаемых (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Сохраняем чат в справочнике
+        self.save_chat(chat_id, title=chat_title, chat_type=chat_type)
+
+        cursor.execute('''
+            INSERT OR REPLACE INTO tracked_chats
+            (chat_id, chat_title, chat_type, enabled, added_at)
+            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+        ''', (chat_id, chat_title, chat_type))
+
+        conn.commit()
+        conn.close()
+        return True
+
+    def remove_tracked_chat(self, chat_id):
+        """Удалить чат из списка отслеживаемых (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM tracked_chats WHERE chat_id = ?', (chat_id,))
+
+        conn.commit()
+        conn.close()
+        return True
+
+    def get_tracked_chat_info(self, chat_id):
+        """Получить информацию об отслеживаемом чате (совместимость)"""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        cursor.execute('SELECT * FROM tracked_chats WHERE chat_id = ?', (chat_id,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return dict(result)
+        return None
+
+    def clear_chat_messages(self, chat_id):
+        """Очистить сообщения чата (для endpoint /clear_chat)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        # Удаляем метаданные
+        cursor.execute('DELETE FROM message_meta WHERE chat_id = ?', (chat_id,))
+        deleted_meta = cursor.rowcount
+
+        # Удаляем RAW данные
+        cursor.execute('DELETE FROM messages_raw WHERE chat_id = ?', (chat_id,))
+        deleted_raw = cursor.rowcount
+
+        # Сбрасываем статус загрузки
+        cursor.execute('''
+            UPDATE chat_loading_status
+            SET last_loaded_id = 0, total_loaded = 0, fully_loaded = 0, last_loading_date = NULL
+            WHERE chat_id = ?
+        ''', (chat_id,))
+
+        conn.commit()
+        conn.close()
+        return deleted_meta + deleted_raw
+
+    def clear_database(self):
+        """Очистить всю базу данных (для endpoint /clear_database)"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute('DELETE FROM message_meta')
+        cursor.execute('DELETE FROM messages_raw')
+        cursor.execute('DELETE FROM chat_loading_status')
+        cursor.execute('DELETE FROM message_files')
+        cursor.execute('DELETE FROM message_edits')
+        cursor.execute('DELETE FROM message_events')
+
+        conn.commit()
+        conn.close()
+
 
 # Глобальный экземпляр
 db_v6 = DatabaseV6()
