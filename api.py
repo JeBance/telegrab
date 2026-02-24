@@ -193,389 +193,12 @@ async def get_api_key(api_key: str = Security(api_key_header)):
     
     return api_key
 
-# ==================== БАЗА ДАННЫХ ====================
-class Database:
-    """Простая работа с SQLite"""
+# ==================== БАЗА ДАННЫХ V6 ====================
+# Импорт DatabaseV6 из отдельного модуля
+from database_v6 import DatabaseV6
 
-    def __init__(self):
-        import sqlite3
-        self.db_path = "data/telegrab.db"
-        self.init_database()
-
-    def init_database(self):
-        """Инициализация базы данных"""
-        import sqlite3
-        os.makedirs("data", exist_ok=True)
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER,
-                chat_id INTEGER,
-                chat_title TEXT,
-                text TEXT,
-                sender_name TEXT,
-                message_date TEXT,
-                saved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                media_type TEXT,
-                file_id TEXT,
-                file_name TEXT,
-                file_size INTEGER
-            )
-        ''')
-
-        # Добавляем новые поля если их нет (миграция для старых БД)
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN media_type TEXT')
-            logger.info("Добавлено поле media_type")
-        except sqlite3.OperationalError:
-            pass  # Поле уже существует
-
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN file_id TEXT')
-            logger.info("Добавлено поле file_id")
-        except sqlite3.OperationalError:
-            pass
-
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN file_name TEXT')
-            logger.info("Добавлено поле file_name")
-        except sqlite3.OperationalError:
-            pass
-
-        try:
-            cursor.execute('ALTER TABLE messages ADD COLUMN file_size INTEGER')
-            logger.info("Добавлено поле file_size")
-        except sqlite3.OperationalError:
-            pass
-
-        # КОМБИНИРОВАННЫЙ UNIQUE индекс (chat_id + message_id)
-        # Позволяет сохранять сообщения с одинаковыми message_id из разных чатов
-        cursor.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_message_unique 
-            ON messages(chat_id, message_id)
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS chat_loading_status (
-                chat_id INTEGER PRIMARY KEY,
-                last_loaded_id INTEGER DEFAULT 0,
-                last_message_date TEXT,
-                total_loaded INTEGER DEFAULT 0,
-                fully_loaded BOOLEAN DEFAULT 0,
-                last_loading_date TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS tracked_chats (
-                chat_id INTEGER PRIMARY KEY,
-                chat_title TEXT,
-                chat_type TEXT,
-                enabled BOOLEAN DEFAULT 1,
-                added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_chat ON messages(chat_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_date ON messages(message_date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_saved_at ON messages(saved_at)')
-
-        conn.commit()
-        conn.close()
-
-    def save_message(self, message_id, chat_id, chat_title, text, sender_name, message_date, 
-                     media_type=None, file_id=None, file_name=None, file_size=None):
-        """Сохранение сообщения в базу"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                INSERT OR IGNORE INTO messages
-                (message_id, chat_id, chat_title, text, sender_name, message_date, 
-                 media_type, file_id, file_name, file_size)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (message_id, chat_id, chat_title, text, sender_name, message_date,
-                  media_type, file_id, file_name, file_size))
-
-            saved = cursor.rowcount > 0
-            conn.commit()
-            conn.close()
-            return saved
-        except Exception as e:
-            logger.error(f"Ошибка сохранения: {e}")
-            return False
-
-    def update_loading_status(self, chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded=False):
-        """Обновление статуса загрузки чата"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                INSERT OR REPLACE INTO chat_loading_status
-                (chat_id, last_loaded_id, last_message_date, total_loaded, fully_loaded, last_loading_date)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (chat_id, last_loaded_id, last_message_date, total_loaded,
-                  1 if fully_loaded else 0, datetime.now().isoformat()))
-
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print(f"❌ Ошибка обновления статуса: {e}")
-
-    def get_loading_status(self, chat_id):
-        """Получить статус загрузки чата"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT * FROM chat_loading_status WHERE chat_id = ?', (chat_id,))
-            result = cursor.fetchone()
-            conn.close()
-
-            if result:
-                return dict(result)
-            return {'chat_id': chat_id, 'last_loaded_id': 0, 'total_loaded': 0, 'fully_loaded': 0}
-        except Exception as e:
-            print(f"❌ Ошибка получения статуса: {e}")
-            return {}
-
-    def get_last_message_date_in_chat(self, chat_id):
-        """Получить дату последнего сообщения в чате"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT MAX(message_date) FROM messages WHERE chat_id = ?', (chat_id,))
-            result = cursor.fetchone()[0]
-            conn.close()
-
-            if result:
-                try:
-                    # Нормализация формата даты
-                    date_str = str(result).replace('Z', '+00:00')
-                    # Убираем микросекунды если есть
-                    if '.' in date_str:
-                        date_str = date_str.split('.')[0] + date_str[-6:] if '+' in date_str or date_str.endswith('Z') else date_str.split('.')[0]
-                    return datetime.fromisoformat(date_str)
-                except Exception as e:
-                    print(f"⚠️ Ошибка парсинга даты: {e}")
-                    return None
-            return None
-        except Exception as e:
-            print(f"❌ Ошибка получения последней даты: {e}")
-            return None
-
-    def get_chats_with_messages(self):
-        """Получить список чатов с сообщениями"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                SELECT DISTINCT chat_id, chat_title, MAX(message_date) as last_message_date
-                FROM messages
-                WHERE chat_title IS NOT NULL AND chat_title != ''
-                GROUP BY chat_id, chat_title
-                ORDER BY last_message_date DESC
-            ''')
-
-            results = [dict(row) for row in cursor.fetchall()]
-            conn.close()
-            return results
-        except Exception as e:
-            print(f"❌ Ошибка получения чатов: {e}")
-            return []
-
-    def get_messages(self, chat_id=None, limit=100, offset=0, search=None):
-        """Получение сообщений из базы"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            query = "SELECT * FROM messages"
-            params = []
-
-            where_clauses = []
-            if chat_id:
-                where_clauses.append("chat_id = ?")
-                params.append(chat_id)
-            if search:
-                where_clauses.append("text LIKE ?")
-                params.append(f"%{search}%")
-
-            if where_clauses:
-                query += " WHERE " + " AND ".join(where_clauses)
-
-            query += " ORDER BY message_date DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-
-            cursor.execute(query, params)
-            results = [dict(row) for row in cursor.fetchall()]
-            conn.close()
-            return results
-        except Exception as e:
-            print(f"❌ Ошибка чтения: {e}")
-            return []
-
-    def get_chats(self):
-        """Получение списка чатов со статистикой"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                SELECT
-                    m.chat_id,
-                    m.chat_title,
-                    MAX(m.message_date) as last_message,
-                    COUNT(*) as message_count,
-                    COALESCE(s.fully_loaded, 0) as fully_loaded,
-                    COALESCE(s.total_loaded, 0) as total_loaded
-                FROM messages m
-                LEFT JOIN chat_loading_status s ON m.chat_id = s.chat_id
-                WHERE m.chat_title IS NOT NULL AND m.chat_title != ''
-                GROUP BY m.chat_id, m.chat_title
-                ORDER BY last_message DESC
-            ''')
-
-            results = [dict(row) for row in cursor.fetchall()]
-            conn.close()
-            return results
-        except Exception as e:
-            print(f"❌ Ошибка получения чатов: {e}")
-            return []
-
-    def get_tracked_chats(self):
-        """Получить список отслеживаемых чатов"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                SELECT t.chat_id, t.chat_title, t.chat_type, t.enabled, t.added_at,
-                       COALESCE(s.total_loaded, 0) as total_loaded,
-                       COALESCE(s.fully_loaded, 0) as fully_loaded,
-                       COALESCE(s.last_loaded_id, 0) as last_loaded_id,
-                       s.last_message_date,
-                       s.last_loading_date
-                FROM tracked_chats t
-                LEFT JOIN chat_loading_status s ON t.chat_id = s.chat_id
-                ORDER BY t.added_at DESC
-            ''')
-
-            results = [dict(row) for row in cursor.fetchall()]
-            conn.close()
-            return results
-        except Exception as e:
-            print(f"❌ Ошибка получения отслеживаемых чатов: {e}")
-            return []
-
-    def add_tracked_chat(self, chat_id, chat_title, chat_type):
-        """Добавить чат в список отслеживаемых"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute('''
-                INSERT OR REPLACE INTO tracked_chats
-                (chat_id, chat_title, chat_type, enabled, added_at)
-                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
-            ''', (chat_id, chat_title, chat_type))
-
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"❌ Ошибка добавления отслеживаемого чата: {e}")
-            return False
-
-    def remove_tracked_chat(self, chat_id):
-        """Удалить чат из списка отслеживаемых"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute('DELETE FROM tracked_chats WHERE chat_id = ?', (chat_id,))
-
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"❌ Ошибка удаления отслеживаемого чата: {e}")
-            return False
-
-    def get_tracked_chat_info(self, chat_id):
-        """Получить информацию об отслеживаемом чате"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT * FROM tracked_chats WHERE chat_id = ?', (chat_id,))
-            result = cursor.fetchone()
-            conn.close()
-
-            if result:
-                return dict(result)
-            return None
-        except Exception as e:
-            print(f"❌ Ошибка получения информации: {e}")
-            return None
-
-    def get_stats(self):
-        """Получение статистики"""
-        import sqlite3
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT COUNT(*) FROM messages')
-            total_messages = cursor.fetchone()[0] or 0
-
-            cursor.execute('SELECT COUNT(DISTINCT chat_id) FROM messages')
-            total_chats = cursor.fetchone()[0] or 0
-
-            cursor.execute('SELECT COUNT(*) FROM chat_loading_status WHERE fully_loaded = 1')
-            fully_loaded_chats = cursor.fetchone()[0] or 0
-
-            cursor.execute('SELECT MAX(saved_at) FROM messages')
-            last_saved = cursor.fetchone()[0] or "Нет данных"
-
-            conn.close()
-
-            return {
-                'total_messages': total_messages,
-                'total_chats': total_chats,
-                'fully_loaded_chats': fully_loaded_chats,
-                'last_saved': last_saved
-            }
-        except Exception as e:
-            print(f"❌ Ошибка статистики: {e}")
-            return {}
-
-db = Database()
+# Глобальный экземпляр БД v6
+db = DatabaseV6("data/telegrab_v6.db")
 
 # ==================== МЕНЕДЖЕР WEBSOCKET ====================
 class ConnectionManager:
@@ -833,25 +456,10 @@ async def remove_tracked_chat(chat_id: int, api_key: str = Depends(get_api_key))
 @app.post("/clear_chat/{chat_id}")
 async def clear_chat(chat_id: int, api_key: str = Depends(get_api_key)):
     """Очистить сообщения чата из БД"""
-    import sqlite3
     try:
-        conn = sqlite3.connect(db.db_path)
-        cursor = conn.cursor()
-        
-        # Удаляем сообщения
-        cursor.execute('DELETE FROM messages WHERE chat_id = ?', (chat_id,))
-        deleted = cursor.rowcount
-        
-        # Сбрасываем статус загрузки
-        cursor.execute('''
-            UPDATE chat_loading_status 
-            SET last_loaded_id = 0, total_loaded = 0, fully_loaded = 0, last_loading_date = NULL
-            WHERE chat_id = ?
-        ''', (chat_id,))
-        
-        conn.commit()
-        conn.close()
-        
+        # Используем новый метод clear_chat_messages из DatabaseV6
+        deleted = db.clear_chat_messages(chat_id)
+
         return {'status': 'ok', 'deleted': deleted, 'message': f'Удалено {deleted} сообщений чата {chat_id}'}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1066,14 +674,9 @@ async def export_messages(api_key: str = Depends(get_api_key), limit: int = 1000
 @app.post("/clear_database")
 async def clear_database(api_key: str = Depends(get_api_key)):
     """Очистить базу данных"""
-    import sqlite3
     try:
-        conn = sqlite3.connect(db.db_path)
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM messages')
-        cursor.execute('DELETE FROM chat_loading_status')
-        conn.commit()
-        conn.close()
+        # Используем новый метод clear_database из DatabaseV6
+        db.clear_database()
         return {'status': 'ok', 'message': 'База данных очищена'}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1553,10 +1156,11 @@ async def load_chat_history_with_rate_limit(client, chat_id, limit=0, task_id=No
 
         # Получаем MAX(message_id) из БД для этого чата
         # Это нужно чтобы начать загрузку с правильного места
+        # Используем messages_raw вместо старой таблицы messages
         import sqlite3
         conn = sqlite3.connect(db.db_path)
         cursor = conn.cursor()
-        cursor.execute('SELECT MAX(message_id) FROM messages WHERE chat_id = ?', (chat_id,))
+        cursor.execute('SELECT MAX(message_id) FROM messages_raw WHERE chat_id = ?', (chat_id,))
         result = cursor.fetchone()[0]
         conn.close()
         
