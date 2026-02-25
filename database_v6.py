@@ -616,7 +616,8 @@ class DatabaseV6:
             'media_type': media_type,
             'file_id': file_id,
             'file_name': file_name,
-            'file_size': file_size
+            'file_size': file_size,
+            'files': []  # Список файлов для вкладки в деталях
         }
 
         # Формируем метаданные
@@ -639,8 +640,10 @@ class DatabaseV6:
                 'file_id': file_id,
                 'file_type': media_type,
                 'file_size': file_size,
-                'file_name': file_name
+                'file_name': file_name or f'{media_type}_{message_id}'
             })
+            # Добавляем файлы в RAW данные
+            raw_data['files'] = files
 
         return self.save_message_raw(chat_id, message_id, raw_data, meta, files)
 
@@ -775,6 +778,15 @@ class DatabaseV6:
                     pass
 
             # Формируем результат в старом формате
+            files = []
+            if raw.get('file_id'):
+                files.append({
+                    'file_id': raw.get('file_id'),
+                    'file_type': raw.get('media_type'),
+                    'file_size': raw.get('file_size'),
+                    'file_name': raw.get('file_name') or f'{raw.get("media_type")}_{data["message_id"]}'
+                })
+
             results.append({
                 'id': data.get('id'),
                 'message_id': data['message_id'],
@@ -791,8 +803,8 @@ class DatabaseV6:
                 'file_size': raw.get('file_size'),
                 'has_media': bool(data.get('has_media')),
                 'views': data.get('views'),
-                # Добавляем файлы для вкладки
-                'files': raw.get('files') or []
+                # Добавляем файлы для вкладки (из RAW или генерируем из file_id)
+                'files': raw.get('files') or files
             })
 
         conn.close()
