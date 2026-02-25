@@ -613,30 +613,6 @@ async function loadMessages() {
     console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
 
     try {
-        // Получаем общее количество сообщений (с учётом фильтра)
-        let totalMessages = 0;
-        if (chatId) {
-            // Если выбран чат, получаем количество сообщений для этого чата
-            const chatsData = await apiRequest('/chats');
-            const chat = chatsData.chats.find(c => String(c.chat_id) === String(chatId));
-            totalMessages = chat ? (chat.message_count || 0) : 0;
-        } else if (search) {
-            // Если есть поиск, используем общее количество
-            const stats = await apiRequest('/stats');
-            totalMessages = stats.total_messages || 0;
-        } else {
-            // Без фильтра и поиска
-            const stats = await apiRequest('/stats');
-            totalMessages = stats.total_messages || 0;
-        }
-
-        // Сбрасываем на первую страницу если текущая страница больше доступного
-        const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
-        if (messagePage >= totalPages && totalPages > 0) {
-            console.log(`⚠️  Сброс страницы: ${messagePage} -> 0 (доступно страниц: ${totalPages})`);
-            messagePage = 0;
-        }
-
         let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
         if (chatId) url += `&chat_id=${chatId}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -644,6 +620,19 @@ async function loadMessages() {
         console.log('📡 Запрос к API:', url);
         const data = await apiRequest(url);
         console.log('📦 Сообщения из API:', data);
+
+        // Используем реальное количество сообщений из ответа API
+        const totalMessages = data.count || 0;
+
+        // Сбрасываем на первую страницу если текущая страница больше доступного
+        const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
+        if (messagePage >= totalPages && totalPages > 0) {
+            console.log(`⚠️  Сброс страницы: ${messagePage} -> 0 (доступно страниц: ${totalPages})`);
+            messagePage = 0;
+            // Перезагружаем с первой страницы
+            loadMessages();
+            return;
+        }
 
         const tbody = document.getElementById('messagesTable');
 
@@ -678,8 +667,7 @@ async function loadMessages() {
         } else {
             console.log('⚠️  Нет сообщений');
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
-            const finalTotalPages = chatId || search ? 1 : 0;
-            document.getElementById('messagesCount').textContent = `${totalMessages || 0} сообщений`;
+            document.getElementById('messagesCount').textContent = '0 сообщений';
             updatePagination(0);
         }
     } catch (e) {
