@@ -630,6 +630,13 @@ async function loadMessages() {
             totalMessages = stats.total_messages || 0;
         }
 
+        // Сбрасываем на первую страницу если текущая страница больше доступного
+        const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
+        if (messagePage >= totalPages && totalPages > 0) {
+            console.log(`⚠️  Сброс страницы: ${messagePage} -> 0 (доступно страниц: ${totalPages})`);
+            messagePage = 0;
+        }
+
         let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
         if (chatId) url += `&chat_id=${chatId}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -674,21 +681,15 @@ async function loadMessages() {
             `).join('');
 
             // Обновляем счётчик
-            const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
-            // Сбрасываем на первую страницу если текущая страница больше общего количества
-            if (messagePage >= totalPages && totalPages > 0) {
-                messagePage = 0;
-                loadMessages();
-                return;
-            }
-            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages || 1} (всего: ${totalMessages} сообщений)`;
+            const finalTotalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
+            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${finalTotalPages || 1} (всего: ${totalMessages} сообщений)`;
 
             // Обновляем пагинацию
-            updatePagination(totalPages);
+            updatePagination(finalTotalPages);
         } else {
             console.log('⚠️  Нет сообщений');
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
-            const totalPages = chatId || search ? 1 : 0;
+            const finalTotalPages = chatId || search ? 1 : 0;
             document.getElementById('messagesCount').textContent = `${totalMessages || 0} сообщений`;
             updatePagination(0);
         }
