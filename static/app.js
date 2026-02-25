@@ -609,23 +609,35 @@ async function startWorker() {
 async function loadMessages() {
     const chatId = document.getElementById('messageChatFilter').value;
     const search = document.getElementById('messageSearch').value;
-    
+
     console.log('📥 Загрузка сообщений:', { chatId, search, page: messagePage });
 
     try {
-        // Сначала получаем общее количество
-        const statsUrl = `/stats`;
-        const stats = await apiRequest(statsUrl);
-        const totalMessages = stats.total_messages || 0;
-        
+        // Получаем общее количество сообщений (с учётом фильтра)
+        let totalMessages = 0;
+        if (chatId) {
+            // Если выбран чат, получаем количество сообщений для этого чата
+            const chatsData = await apiRequest('/chats');
+            const chat = chatsData.chats.find(c => String(c.chat_id) === String(chatId));
+            totalMessages = chat ? (chat.message_count || 0) : 0;
+        } else if (search) {
+            // Если есть поиск, используем общее количество
+            const stats = await apiRequest('/stats');
+            totalMessages = stats.total_messages || 0;
+        } else {
+            // Без фильтра и поиска
+            const stats = await apiRequest('/stats');
+            totalMessages = stats.total_messages || 0;
+        }
+
         let url = `/messages?limit=${MESSAGES_PER_PAGE}&offset=${messagePage * MESSAGES_PER_PAGE}`;
         if (chatId) url += `&chat_id=${chatId}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
-        
+
         console.log('📡 Запрос к API:', url);
         const data = await apiRequest(url);
         console.log('📦 Сообщения из API:', data);
-        
+
         const tbody = document.getElementById('messagesTable');
 
         if (data.messages && data.messages.length > 0) {
@@ -663,15 +675,22 @@ async function loadMessages() {
 
             // Обновляем счётчик
             const totalPages = Math.ceil(totalMessages / MESSAGES_PER_PAGE);
-            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages} (всего: ${totalMessages} сообщений)`;
+            // Сбрасываем на первую страницу если текущая страница больше общего количества
+            if (messagePage >= totalPages && totalPages > 0) {
+                messagePage = 0;
+                loadMessages();
+                return;
+            }
+            document.getElementById('messagesCount').textContent = `Страница ${messagePage + 1} из ${totalPages || 1} (всего: ${totalMessages} сообщений)`;
 
             // Обновляем пагинацию
             updatePagination(totalPages);
         } else {
             console.log('⚠️  Нет сообщений');
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Сообщений нет</td></tr>';
-            document.getElementById('messagesCount').textContent = '0 сообщений';
-            document.getElementById('messagesPagination').innerHTML = '';
+            const totalPages = chatId || search ? 1 : 0;
+            document.getElementById('messagesCount').textContent = `${totalMessages || 0} сообщений`;
+            updatePagination(0);
         }
     } catch (e) {
         console.error('❌ Ошибка загрузки сообщений:', e);
