@@ -1949,6 +1949,8 @@ async function showMessageDetails(chatId, messageId) {
         const filesBody = document.getElementById('filesTableBody');
         const filesBadge = document.getElementById('filesBadge');
         const filesEmpty = document.getElementById('filesEmpty');
+        const filesGallery = document.getElementById('filesGallery');
+        const filesTableContainer = document.getElementById('filesTableContainer');
 
         // Получаем файлы из RAW данных
         const files = data.files || [];
@@ -1957,25 +1959,64 @@ async function showMessageDetails(chatId, messageId) {
         if (files.length > 0) {
             filesEmpty.style.display = 'none';
             const apiKey = localStorage.getItem('telegrab_api_key') || '';
-            filesBody.innerHTML = files.map((file, idx) => `
-                <tr>
-                    <td><span class="badge bg-${getFileTypeBadgeClass(file.file_type)}">${getMediaTypeName(file.file_type)}</span></td>
-                    <td>${escapeHtml(file.file_name || 'unnamed')}</td>
-                    <td>${formatFileSize(file.file_size || 0)}</td>
-                    <td>
-                        ${file.file_id ? `
+            
+            // Разделяем файлы на галерею (фото/видео) и остальные
+            const galleryFiles = files.filter(f => ['photo', 'video', 'gif'].includes(f.file_type));
+            const otherFiles = files.filter(f => !['photo', 'video', 'gif'].includes(f.file_type));
+            
+            // Отображаем галерею
+            if (galleryFiles.length > 0) {
+                filesGallery.style.display = 'flex';
+                filesGallery.innerHTML = galleryFiles.map(file => `
+                    <div class="col-4 col-md-3 col-lg-2">
+                        <div class="card h-100">
+                            <img src="/media/${chatId}/${messageId}?api_key=${encodeURIComponent(apiKey)}" 
+                                 class="card-img-top" 
+                                 alt="${escapeHtml(file.file_name || file.file_type)}" 
+                                 style="height: 100px; width: 100%; object-fit: cover;">
+                            <div class="card-body p-2 text-center">
+                                <small class="text-muted">${getMediaTypeName(file.file_type)}</small>
+                                <br>
+                                <a href="/media/${chatId}/${messageId}?api_key=${encodeURIComponent(apiKey)}" 
+                                   download="${escapeHtml(file.file_name || 'file')}"
+                                   class="btn btn-sm btn-outline-light mt-1"
+                                   title="Скачать">
+                                    <i class="bi bi-download"></i>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                filesGallery.style.display = 'none';
+                filesGallery.innerHTML = '';
+            }
+            
+            // Отображаем таблицу остальных файлов
+            if (otherFiles.length > 0) {
+                filesTableContainer.style.display = 'block';
+                filesBody.innerHTML = otherFiles.map(file => `
+                    <tr>
+                        <td><span class="badge bg-${getFileTypeBadgeClass(file.file_type)}">${getMediaTypeName(file.file_type)}</span></td>
+                        <td>${escapeHtml(file.file_name || 'unnamed')}</td>
+                        <td>${formatFileSize(file.file_size || 0)}</td>
+                        <td>
                             <a href="/media/${chatId}/${messageId}?api_key=${encodeURIComponent(apiKey)}"
                                download="${escapeHtml(file.file_name || 'file')}"
                                class="btn btn-sm btn-outline-light"
                                title="Скачать">
                                 <i class="bi bi-download"></i>
                             </a>
-                        ` : '-'}
-                    </td>
-                </tr>
-            `).join('');
+                        </td>
+                    </tr>
+                `).join('');
+            } else {
+                filesTableContainer.style.display = 'none';
+            }
         } else {
             filesEmpty.style.display = 'block';
+            filesGallery.style.display = 'none';
+            filesTableContainer.style.display = 'none';
             filesBody.innerHTML = '';
         }
 
