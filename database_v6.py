@@ -986,7 +986,16 @@ class DatabaseV6:
 
         if result and result['raw_data']:
             try:
-                return json.loads(result['raw_data'])
+                raw_data = json.loads(result['raw_data'])
+                # Генерируем files из file_id если отсутствует
+                if not raw_data.get('files') and raw_data.get('file_id'):
+                    raw_data['files'] = [{
+                        'file_id': raw_data.get('file_id'),
+                        'file_type': raw_data.get('media_type'),
+                        'file_size': raw_data.get('file_size'),
+                        'file_name': raw_data.get('file_name') or f'{raw_data.get("media_type")}_{raw_data.get("id")}'
+                    }]
+                return raw_data
             except:
                 return None
         return None
