@@ -817,15 +817,36 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- Фильтры -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-5">
+                            <select class="form-select form-select-sm" id="filesChatFilter" onchange="loadFilesList()">
+                                <option value="">Все чаты</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <select class="form-select form-select-sm" id="filesMediaType" onchange="loadFilesList()">
+                                <option value="">Все типы</option>
+                                <option value="photo">Фото</option>
+                                <option value="video">Видео</option>
+                                <option value="document">Документы</option>
+                                <option value="audio">Аудио</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-sm btn-outline-light w-100" onclick="loadFilesList()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                    </div>
                     <small class="text-muted">Всего: <span id="filesListCount">0</span></small>
                     <div class="table-responsive mt-3">
                         <table class="table table-dark table-sm">
                             <thead>
                                 <tr>
+                                    <th>Чат</th>
                                     <th>Тип</th>
-                                    <th>Имя</th>
-                                    <th>Размер</th>
-                                    <th>MIME</th>
+                                    <th>Предпросмотр</th>
                                     <th>Дата</th>
                                 </tr>
                             </thead>
