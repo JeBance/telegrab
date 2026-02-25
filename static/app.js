@@ -1684,60 +1684,159 @@ function displaySearchResults(results) {
 }
 
 // Показать галерею медиа
-async function showMediaGallery(chatId = null, mediaType = null) {
+async function showMediaGallery() {
+    const modal = new bootstrap.Modal(document.getElementById('mediaGalleryModal'));
+    modal.show();
+    
+    // Загружаем фильтр чатов
+    loadGalleryChatFilter();
+    // Загружаем галерею
+    loadMediaGallery();
+}
+
+// Загрузка чатов в фильтр галереи
+async function loadGalleryChatFilter() {
     try {
-        console.log('🖼️ Загрузка галереи медиа:', { chatId, mediaType });
+        const data = await apiRequest('/chats');
+        const filter = document.getElementById('galleryChatFilter');
+        
+        if (!filter) return;
+        
+        const currentValue = filter.value;
+        filter.innerHTML = '<option value="">Все чаты</option>';
+        
+        if (data.chats && data.chats.length > 0) {
+            data.chats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.chat_id;
+                option.textContent = chat.chat_title;
+                filter.appendChild(option);
+            });
+        }
+        
+        if (currentValue) filter.value = currentValue;
+    } catch (e) {
+        console.error('Ошибка загрузки фильтра галереи:', e);
+    }
+}
+
+// Загрузка галереи медиа
+async function loadMediaGallery() {
+    try {
+        const chatId = document.getElementById('galleryChatFilter').value;
+        const mediaType = document.getElementById('galleryMediaType').value;
+        
+        console.log('🖼️ Загрузка галереи:', { chatId, mediaType });
         const params = new URLSearchParams();
         if (chatId) params.append('chat_id', chatId);
         if (mediaType) params.append('media_type', mediaType);
-        params.append('limit', 50);
+        params.append('limit', 100);
 
         const result = await apiRequest(`/media_gallery?${params.toString()}`);
-
-        const modal = new bootstrap.Modal(document.getElementById('mediaGalleryModal'));
         const gallery = document.getElementById('mediaGalleryContent');
+
+        // Считаем по типам
+        const photos = result.media.filter(m => m.media_type === 'photo');
+        const videos = result.media.filter(m => m.media_type === 'video');
+        const documents = result.media.filter(m => m.media_type === 'document');
+        
+        // Обновляем счётчики
+        document.getElementById('galleryPhotoCount').textContent = `Фото: ${photos.length}`;
+        document.getElementById('galleryVideoCount').textContent = `Видео: ${videos.length}`;
 
         if (result.media.length === 0) {
             gallery.innerHTML = '<p class="text-center text-muted">Медиа не найдено</p>';
         } else {
-            // Фильтруем только фото для отображения
-            const photos = result.media.filter(m => m.media_type === 'photo');
-
-            if (photos.length === 0) {
-                gallery.innerHTML = '<p class="text-center text-muted">Фото не найдено</p>';
-            } else {
-                gallery.innerHTML = `
-                    <div class="row g-3">
-                        ${photos.map(msg => `
-                            <div class="col-md-4 col-lg-3">
-                                <div class="card h-100">
-                                    <div class="card-body text-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 200px; display: flex; align-items: center; justify-content: center;">
-                                        <i class="bi bi-image" style="font-size: 4rem; color: white;"></i>
-                                    </div>
-                                    <div class="card-body">
-                                        <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
-                                        <p class="card-text text-truncate small">${escapeHtml(msg.text_preview || '')}</p>
-                                        <div class="d-flex justify-content-between align-items-center mt-2">
-                                            <span class="badge bg-info">Фото</span>
-                                            <small class="text-muted">${formatDate(msg.message_date)}</small>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                `;
-            }
+            gallery.innerHTML = `
+                <div class="row g-3">
+                    ${result.media.map(msg => getMediaCardHtml(msg)).join('')}
+                </div>
+            `;
         }
 
-        document.getElementById('mediaGalleryCount').textContent = result.count;
-        modal.show();
-
-        addLog(`Галерея медиа загружена: ${result.count} элементов`, 'info');
+        addLog(`Галерея медиа: ${result.media.length} элементов`, 'info');
     } catch (e) {
         console.error('Ошибка загрузки галереи:', e);
         alert('Ошибка: ' + e.message);
     }
+}
+
+// Генерация карточки медиа
+function getMediaCardHtml(msg) {
+    const icon = getMediaIcon(msg.media_type);
+    const gradient = getMediaGradient(msg.media_type);
+    const badgeClass = getMediaBadgeClass(msg.media_type);
+    const typeName = getMediaTypeName(msg.media_type);
+
+    return `
+        <div class="col-md-4 col-lg-3">
+            <div class="card h-100">
+                <div class="card-body text-center" style="${gradient} min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                    <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
+                </div>
+                <div class="card-body">
+                    <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
+                    <p class="card-text text-truncate small">${escapeHtml(msg.text_preview || '[медиа]')}</p>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <span class="badge ${badgeClass}">${typeName}</span>
+                        <small class="text-muted">${formatDate(msg.message_date)}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function getMediaIcon(mediaType) {
+    const icons = {
+        'photo': 'bi-image',
+        'video': 'bi-camera-video',
+        'document': 'bi-file-earmark',
+        'audio': 'bi-music-note-beamed',
+        'voice': 'bi-mic',
+        'gif': 'bi-film',
+        'sticker': 'bi-emoji-smile'
+    };
+    return icons[mediaType] || 'bi-file-earmark';
+}
+
+function getMediaGradient(mediaType) {
+    const gradients = {
+        'photo': 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);',
+        'video': 'background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);',
+        'document': 'background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);',
+        'audio': 'background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);',
+        'voice': 'background: linear-gradient(135deg, #5ee7df 0%, #b490ca 100%);',
+        'gif': 'background: linear-gradient(135deg, #d299c2 0%, #fef9d7 100%);',
+        'sticker': 'background: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%);'
+    };
+    return gradients[mediaType] || 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
+}
+
+function getMediaBadgeClass(mediaType) {
+    const classes = {
+        'photo': 'bg-info',
+        'video': 'bg-danger',
+        'document': 'bg-primary',
+        'audio': 'bg-success',
+        'voice': 'bg-warning',
+        'gif': 'bg-dark',
+        'sticker': 'bg-secondary'
+    };
+    return classes[mediaType] || 'bg-secondary';
+}
+
+function getMediaTypeName(mediaType) {
+    const names = {
+        'photo': 'Фото',
+        'video': 'Видео',
+        'document': 'Документ',
+        'audio': 'Аудио',
+        'voice': 'Голосовое',
+        'gif': 'GIF',
+        'sticker': 'Стикер'
+    };
+    return names[mediaType] || mediaType || 'Медиа';
 }
 
 // Копировать RAW данные

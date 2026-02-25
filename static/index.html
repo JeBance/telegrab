@@ -968,8 +968,35 @@
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <small class="text-muted">Всего: <span id="mediaGalleryCount">0</span></small>
-                    <div id="mediaGalleryContent" class="mt-3"></div>
+                    <!-- Фильтры -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-4">
+                            <select class="form-select form-select-sm" id="galleryChatFilter" onchange="loadMediaGallery()">
+                                <option value="">Все чаты</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select class="form-select form-select-sm" id="galleryMediaType" onchange="loadMediaGallery()">
+                                <option value="">Все типы</option>
+                                <option value="photo">Фото</option>
+                                <option value="video">Видео</option>
+                                <option value="document">Документы</option>
+                                <option value="audio">Аудио</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <span class="badge bg-info" id="galleryPhotoCount">Фото: 0</span>
+                        </div>
+                        <div class="col-md-2">
+                            <span class="badge bg-danger" id="galleryVideoCount">Видео: 0</span>
+                        </div>
+                        <div class="col-md-1">
+                            <button class="btn btn-sm btn-outline-light" onclick="loadMediaGallery()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div id="mediaGalleryContent"></div>
                 </div>
             </div>
         </div>
