@@ -1616,9 +1616,9 @@ async function performAdvancedSearch() {
         const dateFrom = document.getElementById('searchDateFrom').value;
         const dateTo = document.getElementById('searchDateTo').value;
         const limit = document.getElementById('searchLimit').value || 100;
-        
+
         console.log('🔍 Расширенный поиск:', { query, chatId, hasMedia, mediaType, dateFrom, dateTo });
-        
+
         const params = new URLSearchParams();
         if (query) params.append('query', query);
         if (chatId) params.append('chat_id', chatId);
@@ -1627,15 +1627,18 @@ async function performAdvancedSearch() {
         if (dateFrom) params.append('date_from', dateFrom);
         if (dateTo) params.append('date_to', dateTo);
         params.append('limit', limit);
-        
+
         const result = await apiRequest(`/search_advanced?${params.toString()}`, { method: 'POST' });
-        
+
         const modal = bootstrap.Modal.getInstance(document.getElementById('advancedSearchModal'));
         modal.hide();
-        
+
+        // Переключаемся на вкладку сообщений
+        document.querySelector('[data-bs-target="#messages"]').click();
+
         // Показываем результаты в таблице сообщений
         displaySearchResults(result.results);
-        
+
         addLog(`Расширенный поиск выполнен: ${result.count} результатов`, 'success');
     } catch (e) {
         console.error('Ошибка поиска:', e);
