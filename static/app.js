@@ -1520,30 +1520,82 @@ async function showFilesStats() {
 
 // Показать список файлов
 async function showFilesList(fileType = null) {
+    const modal = new bootstrap.Modal(document.getElementById('filesListModal'));
+    modal.show();
+    
+    // Загружаем фильтр чатов
+    loadFilesChatFilter();
+    // Загружаем файлы
+    if (fileType) {
+        document.getElementById('filesMediaType').value = fileType;
+    }
+    loadFilesList();
+}
+
+// Загрузка чатов в фильтр файлов
+async function loadFilesChatFilter() {
     try {
-        console.log('📁 Загрузка списка файлов:', fileType || 'все');
-        const result = await apiRequest(`/files?file_type=${fileType || ''}&limit=100`);
+        const data = await apiRequest('/chats');
+        const filter = document.getElementById('filesChatFilter');
         
-        const modal = new bootstrap.Modal(document.getElementById('filesListModal'));
+        if (!filter) return;
+        
+        const currentValue = filter.value;
+        filter.innerHTML = '<option value="">Все чаты</option>';
+        
+        if (data.chats && data.chats.length > 0) {
+            data.chats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.chat_id;
+                option.textContent = chat.chat_title;
+                filter.appendChild(option);
+            });
+        }
+        
+        if (currentValue) filter.value = currentValue;
+    } catch (e) {
+        console.error('Ошибка загрузки фильтра файлов:', e);
+    }
+}
+
+// Загрузка списка файлов
+async function loadFilesList() {
+    try {
+        const chatId = document.getElementById('filesChatFilter').value;
+        const mediaType = document.getElementById('filesMediaType').value;
+        
+        console.log('📁 Загрузка списка файлов:', { chatId, mediaType });
+        const params = new URLSearchParams();
+        if (chatId) params.append('chat_id', chatId);
+        if (mediaType) params.append('media_type', mediaType);
+        params.append('limit', 100);
+
+        const result = await apiRequest(`/media_gallery?${params.toString()}`);
         const tbody = document.getElementById('filesListBody');
-        
-        if (result.files.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Файлы не найдены</td></tr>';
+
+        if (result.media.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Файлы не найдены</td></tr>';
         } else {
-            tbody.innerHTML = result.files.map(file => `
+            const apiKey = localStorage.getItem('telegrab_api_key') || '';
+            tbody.innerHTML = result.media.map(msg => `
                 <tr>
-                    <td><span class="badge bg-${getFileTypeBadgeClass(file.file_type)}">${escapeHtml(file.file_type || 'unknown')}</span></td>
-                    <td>${escapeHtml(file.file_name || 'unnamed')}</td>
-                    <td>${formatFileSize(file.file_size)}</td>
-                    <td>${file.mime_type || '-'}</td>
-                    <td>${formatDate(file.created_at)}</td>
+                    <td><small>${escapeHtml(msg.chat_title || '')}</small></td>
+                    <td><span class="badge bg-${getFileTypeBadgeClass(msg.media_type)}">${getMediaTypeName(msg.media_type)}</span></td>
+                    <td>
+                        ${['photo', 'video', 'gif', 'document'].includes(msg.media_type) ? `
+                            <img src="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
+                                 alt="${getMediaTypeName(msg.media_type)}" 
+                                 style="height: 50px; width: 50px; object-fit: cover; border-radius: 4px;"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
+                            <i class="bi ${getMediaIcon(msg.media_type)}" style="font-size: 1.5rem; display: none;"></i>
+                        ` : `<i class="bi ${getMediaIcon(msg.media_type)}" style="font-size: 1.5rem;"></i>`}
+                    </td>
+                    <td><small>${formatDate(msg.message_date)}</small></td>
                 </tr>
             `).join('');
         }
-        
+
         document.getElementById('filesListCount').textContent = result.count;
-        modal.show();
-        
         addLog(`Список файлов загружен: ${result.count} файлов`, 'info');
     } catch (e) {
         console.error('Ошибка загрузки списка файлов:', e);
