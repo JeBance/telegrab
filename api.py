@@ -10,6 +10,7 @@ import asyncio
 import uuid
 import time
 import logging
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from contextlib import asynccontextmanager
@@ -1647,8 +1648,20 @@ class TelegramClientWrapper:
         async def message_handler(event):
             await self.handle_new_message(event)
 
+        # Регистрация обработчика редактирований
+        print("📝 Регистрация обработчика редактирований...")
+        @self.client.on(events.MessageEdited)
+        async def edit_handler(event):
+            await self.handle_message_edit(event)
+
+        # Регистрация обработчика удалений
+        print("🗑️ Регистрация обработчика удалений...")
+        @self.client.on(events.MessageDeleted)
+        async def delete_handler(event):
+            await self.handle_message_delete(event)
+
         self.running = True
-        print("✅ Обработчик задач и обработчик сообщений запущены")
+        print("✅ Обработчик задач и обработчики сообщений запущены")
 
         # Автозагрузка если включена
         if CONFIG['AUTO_LOAD_MISSED']:
@@ -1783,6 +1796,82 @@ class TelegramClientWrapper:
 
         except Exception as e:
             print(f"❌ Ошибка обработки сообщения: {e}")
+
+    async def handle_message_edit(self, event):
+        """Обработка редактирования сообщения"""
+        try:
+            message = event.message
+            edit_date = message.edit_date.isoformat() if hasattr(message.edit_date, 'isoformat') else str(message.edit_date)
+
+            # Получаем старое сообщение из БД
+            old_raw = db.get_message_raw_data(message.chat_id, message.id)
+
+            # Сохраняем историю редактирования
+            if old_raw:
+                db.save_message_edit(
+                    chat_id=message.chat_id,
+                    message_id=message.id,
+                    old_text=old_raw.get('text', ''),
+                    new_text=message.text or '',
+                    old_raw_data=old_raw
+                )
+                logger.info(f"✏️ Сообщение {message.id} отредактировано")
+
+            # Обновляем сообщение в БД
+            chat = await message.get_chat()
+            chat_title = getattr(chat, 'title', None) or f"chat_{message.chat_id}"
+            sender = await message.get_sender()
+            sender_name = getattr(sender, 'first_name', '') or getattr(sender, 'username', 'Unknown')
+
+            db.save_message(
+                message_id=message.id,
+                chat_id=message.chat_id,
+                chat_title=chat_title,
+                text=message.text or '',
+                sender_name=sender_name,
+                message_date=message.date.isoformat(),
+                edit_date=edit_date
+            )
+
+            await manager.broadcast({
+                'type': 'message_edited',
+                'message_id': message.id,
+                'chat_id': message.chat_id,
+                'edit_date': edit_date
+            })
+
+        except Exception as e:
+            print(f"❌ Ошибка обработки редактирования: {e}")
+
+    async def handle_message_delete(self, event):
+        """Обработка удаления сообщения"""
+        try:
+            chat_id = event.chat_id
+            deleted_ids = event.deleted_ids
+
+            for msg_id in deleted_ids:
+                # Отмечаем сообщение как удалённое
+                db.mark_message_deleted(chat_id, msg_id)
+
+                # Добавляем событие
+                cursor = sqlite3.connect(db.db_path).cursor()
+                cursor.execute('''
+                    INSERT INTO message_events (chat_id, message_id, event_type, event_date, event_data)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (chat_id, msg_id, 'deleted', datetime.now().isoformat(), None))
+                cursor.connection.commit()
+                cursor.connection.close()
+
+                logger.info(f"🗑️ Сообщение {msg_id} удалено в чате {chat_id}")
+
+            await manager.broadcast({
+                'type': 'messages_deleted',
+                'chat_id': chat_id,
+                'deleted_ids': deleted_ids
+            })
+
+        except Exception as e:
+            print(f"❌ Ошибка обработки удаления: {e}")
 
     async def auto_load_missed(self):
         """Автодогрузка пропущенных"""
