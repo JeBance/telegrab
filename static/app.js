@@ -1768,12 +1768,25 @@ function getMediaCardHtml(msg) {
     const badgeClass = getMediaBadgeClass(msg.media_type);
     const typeName = getMediaTypeName(msg.media_type);
 
+    // Для фото и видео показываем превью
+    const canPreview = ['photo', 'video', 'gif'].includes(msg.media_type);
+
     return `
         <div class="col-md-4 col-lg-3">
             <div class="card h-100">
-                <div class="card-body text-center" style="${gradient} min-height: 200px; display: flex; align-items: center; justify-content: center;">
-                    <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
-                </div>
+                ${canPreview ? `
+                    <img src="/media/${msg.chat_id}/${msg.message_id}" class="card-img-top" 
+                         alt="${escapeHtml(typeName)}" 
+                         style="height: 200px; object-fit: cover;"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                    <div class="card-body text-center" style="${gradient} min-height: 200px; display: none; align-items: center; justify-content: center;">
+                        <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
+                    </div>
+                ` : `
+                    <div class="card-body text-center" style="${gradient} min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                        <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
+                    </div>
+                `}
                 <div class="card-body">
                     <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
                     <p class="card-text text-truncate small">${escapeHtml(msg.text_preview || '[медиа]')}</p>

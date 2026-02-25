@@ -783,6 +783,46 @@ async def get_media_gallery(chat_id: int = None, media_type: str = None,
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/media/{chat_id}/{message_id}")
+async def get_media_file(chat_id: int, message_id: int, api_key: str = Depends(get_api_key)):
+    """Загрузить медиа файл из Telegram"""
+    try:
+        if not tg_client.client or not tg_client.client.is_connected():
+            raise HTTPException(status_code=503, detail="Telegram не подключён")
+
+        # Получаем сообщение
+        chat = await tg_client.client.get_entity(chat_id)
+        message = await tg_client.client.get_messages(chat, ids=message_id)
+        
+        if not message:
+            raise HTTPException(status_code=404, detail="Сообщение не найдено")
+        
+        # Загружаем файл
+        from io import BytesIO
+        from fastapi.responses import StreamingResponse
+        
+        file_path = await tg_client.client.download_media(message)
+        
+        if not file_path:
+            raise HTTPException(status_code=404, detail="Файл не найден")
+        
+        # Определяем MIME тип
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if not mime_type:
+            mime_type = "application/octet-stream"
+        
+        # Читаем файл
+        with open(file_path, 'rb') as f:
+            file_bytes = f.read()
+        
+        return StreamingResponse(BytesIO(file_bytes), media_type=mime_type)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ошибка загрузки медиа: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/config")
 async def get_config(api_key: str = Depends(get_api_key)):
     """Получить текущую конфигурацию"""
