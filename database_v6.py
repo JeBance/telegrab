@@ -519,8 +519,10 @@ class DatabaseV6:
         cursor.execute('SELECT COUNT(*) FROM chats')
         stats['total_chats'] = cursor.fetchone()[0]
 
-        # Количество файлов
-        cursor.execute('SELECT COUNT(*), SUM(file_size) FROM files')
+        # Количество файлов и размер (из таблицы files)
+        # Примечание: размер считается только для файлов с известным file_size
+        # (video, document, audio). Для фото размер неизвестен без загрузки.
+        cursor.execute('SELECT COUNT(*), COALESCE(SUM(file_size), 0) FROM files WHERE file_size IS NOT NULL')
         row = cursor.fetchone()
         stats['total_files'] = row[0] or 0
         stats['total_files_size'] = row[1] or 0
@@ -532,6 +534,10 @@ class DatabaseV6:
         # Количество редактирований
         cursor.execute('SELECT COUNT(*) FROM message_edits')
         stats['total_edits'] = cursor.fetchone()[0]
+
+        # Считаем сообщения с медиа
+        cursor.execute('SELECT COUNT(*) FROM message_meta WHERE has_media = 1 AND is_deleted = 0')
+        stats['messages_with_media'] = cursor.fetchone()[0] or 0
 
         conn.close()
         return stats
