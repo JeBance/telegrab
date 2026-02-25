@@ -1768,8 +1768,8 @@ function getMediaCardHtml(msg) {
     const badgeClass = getMediaBadgeClass(msg.media_type);
     const typeName = getMediaTypeName(msg.media_type);
 
-    // Для фото и видео показываем превью
-    const canPreview = ['photo', 'video', 'gif'].includes(msg.media_type);
+    // Для фото, видео, GIF и документов показываем превью или иконку
+    const canPreview = ['photo', 'video', 'gif', 'document'].includes(msg.media_type);
     
     // Получаем API ключ для загрузки
     const apiKey = localStorage.getItem('telegrab_api_key') || '';
@@ -1782,7 +1782,7 @@ function getMediaCardHtml(msg) {
                          class="card-img-top" 
                          alt="${escapeHtml(typeName)}" 
                          style="height: 200px; object-fit: cover;"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; console.error('Failed to load image');">
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; console.error('Failed to load ${typeName}:', msg);">
                     <div class="card-body text-center" style="${gradient} min-height: 200px; display: none; align-items: center; justify-content: center;">
                         <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
                     </div>
