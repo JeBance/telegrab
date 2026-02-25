@@ -784,9 +784,16 @@ async def get_media_gallery(chat_id: int = None, media_type: str = None,
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/media/{chat_id}/{message_id}")
-async def get_media_file(chat_id: int, message_id: int, api_key: str = Depends(get_api_key)):
+async def get_media_file(chat_id: int, message_id: int, api_key: str = None):
     """Загрузить медиа файл из Telegram"""
     try:
+        # Проверяем API ключ из query параметра или заголовка
+        if not api_key:
+            raise HTTPException(status_code=401, detail="API ключ не предоставлен")
+        
+        if api_key != CONFIG['API_KEY']:
+            raise HTTPException(status_code=401, detail="Неверный API ключ")
+        
         if not tg_client.client or not tg_client.client.is_connected():
             raise HTTPException(status_code=503, detail="Telegram не подключён")
 

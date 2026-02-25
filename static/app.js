@@ -1770,15 +1770,19 @@ function getMediaCardHtml(msg) {
 
     // Для фото и видео показываем превью
     const canPreview = ['photo', 'video', 'gif'].includes(msg.media_type);
+    
+    // Получаем API ключ для загрузки
+    const apiKey = localStorage.getItem('telegrab_api_key') || '';
 
     return `
         <div class="col-md-4 col-lg-3">
             <div class="card h-100">
                 ${canPreview ? `
-                    <img src="/media/${msg.chat_id}/${msg.message_id}" class="card-img-top" 
+                    <img src="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
+                         class="card-img-top" 
                          alt="${escapeHtml(typeName)}" 
                          style="height: 200px; object-fit: cover;"
-                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'; console.error('Failed to load image');">
                     <div class="card-body text-center" style="${gradient} min-height: 200px; display: none; align-items: center; justify-content: center;">
                         <i class="bi ${icon}" style="font-size: 4rem; color: white;"></i>
                     </div>
