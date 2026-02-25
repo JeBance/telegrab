@@ -11,7 +11,7 @@ let qrCheckInterval = null;
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Telegrab UI загружен');
     updateLoadingStatus('Проверка соединения...');
-    
+
     // Проверяем что Bootstrap загрузился
     if (typeof bootstrap === 'undefined') {
         console.error('❌ Bootstrap не загружен!');
@@ -19,7 +19,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('loadingStatus').className = 'text-danger';
         return;
     }
-    
+
+    // Загружаем список чатов в фильтр
+    loadChatFilter();
+
     checkAuthStatus();
     initWebSocket();
     setInterval(refreshAll, 30000); // Автообновление каждые 30 сек
@@ -643,6 +646,53 @@ async function loadMessages() {
     }
 }
 
+// Загрузка списка чатов в фильтр
+async function loadChatFilter() {
+    try {
+        console.log('📋 Загрузка чатов в фильтр...');
+        const data = await apiRequest('/chats');
+        const filter = document.getElementById('messageChatFilter');
+
+        if (!filter) {
+            console.warn('⚠️  Фильтр messageChatFilter не найден');
+            return;
+        }
+
+        // Сохраняем текущее значение
+        const currentValue = filter.value;
+
+        // Очищаем фильтр (оставляем только "Все чаты")
+        filter.innerHTML = '<option value="">Все чаты</option>';
+
+        // Добавляем чаты из БД
+        if (data.chats && data.chats.length > 0) {
+            // Сортируем по имени чата
+            const sortedChats = [...data.chats].sort((a, b) => {
+                const nameA = (a.chat_title || '').toLowerCase();
+                const nameB = (b.chat_title || '').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+
+            sortedChats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.chat_id;
+                option.textContent = `${chat.chat_title} (${chat.message_count})`;
+                filter.appendChild(option);
+            });
+
+            console.log(`✅ Загружено ${sortedChats.length} чатов в фильтр`);
+        }
+
+        // Восстанавливаем предыдущее значение если оно есть
+        if (currentValue) {
+            filter.value = currentValue;
+        }
+
+    } catch (e) {
+        console.error('❌ Ошибка загрузки фильтра чатов:', e);
+    }
+}
+
 // Обновление пагинации
 function updatePagination(totalPages) {
     const pagination = document.getElementById('messagesPagination');
@@ -971,6 +1021,7 @@ async function refreshQueue() {
 async function refreshAll() {
     loadStats();
     loadChats();
+    loadChatFilter();
     loadMessages();
     refreshQueue();
     addLog('Данные обновлены', 'info');
