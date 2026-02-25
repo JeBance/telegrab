@@ -20,6 +20,9 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
+    // Восстанавливаем сохранённые фильтры чатов
+    loadChatFilters();
+
     // Загружаем список чатов в фильтр
     loadChatFilter();
 
@@ -394,49 +397,80 @@ async function loadChats() {
 
 // Применение фильтров (с debounce для плавности)
 function applyChatFilters() {
+    // Сохраняем состояние фильтров в localStorage
+    saveChatFilters();
+
     // Debounce 300ms для плавной фильтрации
     if (chatFilterDebounce) {
         clearTimeout(chatFilterDebounce);
     }
-    
+
     chatFilterDebounce = setTimeout(() => {
         const filtered = allChatsData.filter(chat => {
             // Фильтр по типу
             if (chat.type === 'channel' && !document.getElementById('filterChannels').checked) return false;
             if (chat.type === 'group' && !document.getElementById('filterGroups').checked) return false;
             if (chat.type === 'private' && !document.getElementById('filterPrivate').checked) return false;
-            
+
             // Фильтр по загруженным
             if (document.getElementById('filterLoaded').checked && chat.message_count === 0) return false;
-            
+
             // Поиск по названию
             const search = document.getElementById('chatSearchInput').value.toLowerCase();
             if (search && !chat.title.toLowerCase().includes(search)) return false;
-            
+
             return true;
         });
-        
+
         renderChatsTable(filtered);
     }, 300);
+}
+
+// Сохранение состояния фильтров
+function saveChatFilters() {
+    const filters = {
+        channels: document.getElementById('filterChannels').checked,
+        groups: document.getElementById('filterGroups').checked,
+        private: document.getElementById('filterPrivate').checked,
+        loaded: document.getElementById('filterLoaded').checked
+    };
+    localStorage.setItem('telegrab_chat_filters', JSON.stringify(filters));
+}
+
+// Восстановление состояния фильтров
+function loadChatFilters() {
+    try {
+        const saved = localStorage.getItem('telegrab_chat_filters');
+        if (saved) {
+            const filters = JSON.parse(saved);
+            document.getElementById('filterChannels').checked = filters.channels !== undefined ? filters.channels : true;
+            document.getElementById('filterGroups').checked = filters.groups !== undefined ? filters.groups : true;
+            document.getElementById('filterPrivate').checked = filters.private !== undefined ? filters.private : true;
+            document.getElementById('filterLoaded').checked = filters.loaded !== undefined ? filters.loaded : false;
+            console.log('📑 Фильтры чатов восстановлены');
+        }
+    } catch (e) {
+        console.error('❌ Ошибка восстановления фильтров:', e);
+    }
 }
 
 // Отрисовка таблицы чатов
 function renderChatsTable(chats) {
     const tbody = document.getElementById('chatsTable');
-    
+
     if (chats.length === 0) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Чаты не найдены</td></tr>';
         document.getElementById('chatsCount').textContent = '0 чатов';
         document.getElementById('loadedCount').textContent = '0 загружено';
         return;
     }
-    
+
     // Сортировка: сначала с сообщениями, потом по дате
     chats.sort((a, b) => {
         if (b.message_count !== a.message_count) return b.message_count - a.message_count;
         return new Date(b.last_message_date || 0) - new Date(a.last_message_date || 0);
     });
-    
+
     tbody.innerHTML = chats.map(chat => `
         <tr>
             <td>
