@@ -1039,10 +1039,10 @@ async function refreshQueue() {
             apiRequest('/queue'),
             apiRequest('/tasks')
         ]);
-        
+
         document.getElementById('taskQueueSize').textContent = queue.size || 0;
-        document.getElementById('taskProcessingStatus').textContent = queue.processing ? 'Обработка' : 'Ожидание';
-        
+        document.getElementById('taskProcessingStatus').textContent = queue.is_processing ? 'Обработка' : 'Ожидание';
+
         const tasksList = document.getElementById('tasksList');
         const tasks = tasksData.tasks || [];
         const activeTasks = tasks.filter(t => t.status === 'pending' || t.status === 'processing');
