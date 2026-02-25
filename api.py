@@ -774,7 +774,7 @@ async def search_messages_advanced(
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/media_gallery")
-async def get_media_gallery(chat_id: int = None, media_type: str = None, 
+async def get_media_gallery(chat_id: int = None, media_type: str = None,
                             limit: int = 50, api_key: str = Depends(get_api_key)):
     """Получить галерею медиа"""
     try:
