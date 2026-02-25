@@ -745,6 +745,12 @@
                                 <span class="badge bg-secondary" id="eventsBadge">0</span>
                             </button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-files">
+                                <i class="bi bi-paperclip"></i> Файлы
+                                <span class="badge bg-secondary" id="filesBadge">0</span>
+                            </button>
+                        </li>
                     </ul>
 
                     <!-- Содержимое вкладок -->
@@ -793,6 +799,24 @@
                                 </table>
                             </div>
                             <p class="text-muted text-center" id="eventsEmpty" style="display: none;">События не найдены</p>
+                        </div>
+
+                        <!-- Файлы -->
+                        <div class="tab-pane fade" id="tab-files">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Тип</th>
+                                            <th>Файл</th>
+                                            <th>Размер</th>
+                                            <th>Действия</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="filesTableBody"></tbody>
+                                </table>
+                            </div>
+                            <p class="text-muted text-center" id="filesEmpty" style="display: none;">Файлы не найдены</p>
                         </div>
                     </div>
                 </div>
