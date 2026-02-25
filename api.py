@@ -629,10 +629,10 @@ async def get_queue_status(api_key: str = Depends(get_api_key)):
 
     return {
         'size': total_active,
-        'processing': task_queue.processing,
+        'is_processing': task_queue.processing,
         'requests_per_second': CONFIG['REQUESTS_PER_SECOND'],
         'pending': pending_count,
-        'processing': processing_count
+        'processing_count': processing_count
     }
 
 @app.get("/chat_status/{chat_id}")
