@@ -622,10 +622,17 @@ async def get_task_status(task_id: str, api_key: str = Depends(get_api_key)):
 @app.get("/queue")
 async def get_queue_status(api_key: str = Depends(get_api_key)):
     """Статус очереди"""
+    # Считаем все активные задачи (ожидающие + обрабатываемые)
+    pending_count = sum(1 for t in task_queue.results.values() if t.get('status') == 'pending')
+    processing_count = sum(1 for t in task_queue.results.values() if t.get('status') == 'processing')
+    total_active = pending_count + processing_count
+
     return {
-        'size': task_queue.queue.qsize(),
+        'size': total_active,
         'processing': task_queue.processing,
-        'requests_per_second': CONFIG['REQUESTS_PER_SECOND']
+        'requests_per_second': CONFIG['REQUESTS_PER_SECOND'],
+        'pending': pending_count,
+        'processing': processing_count
     }
 
 @app.get("/chat_status/{chat_id}")
