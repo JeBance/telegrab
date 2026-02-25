@@ -572,7 +572,9 @@ async def get_messages(
 ):
     """Получить сообщения"""
     messages = db.get_messages(chat_id=chat_id, limit=limit, offset=offset, search=search)
-    return {'count': len(messages), 'messages': messages}
+    # Получаем общее количество сообщений для пагинации
+    total = db.get_messages_count(chat_id=chat_id, search=search)
+    return {'count': total, 'messages': messages}
 
 @app.get("/search")
 async def search_messages(

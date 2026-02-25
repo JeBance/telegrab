@@ -796,6 +796,30 @@ class DatabaseV6:
         conn.close()
         return results
 
+    def get_messages_count(self, chat_id=None, search=None):
+        """Получить общее количество сообщений для пагинации"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        query = '''
+            SELECT COUNT(*) FROM message_meta
+            WHERE is_deleted = 0
+        '''
+        params = []
+
+        if chat_id:
+            query += ' AND chat_id = ?'
+            params.append(chat_id)
+
+        if search:
+            query += ' AND text_preview LIKE ?'
+            params.append(f'%{search}%')
+
+        cursor.execute(query, params)
+        result = cursor.fetchone()[0]
+        conn.close()
+        return result or 0
+
     def get_chats(self):
         """Получение списка чатов со статистикой (совместимость)"""
         conn = sqlite3.connect(self.db_path)
