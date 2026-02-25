@@ -463,7 +463,7 @@ function renderChatsTable(chats) {
             </td>
             <td>
                 <div class="d-flex gap-1">
-                    <button class="btn btn-sm btn-outline-info" onclick="showChatDetailedStats('${chat.id}', '${escapeJs(chat.title)}')" title="Статистика чата">
+                    <button class="btn btn-sm btn-outline-info" onclick="showChatDetailedStats(${chat.id}, '${escapeJs(chat.title)}')" title="Статистика чата">
                         <i class="bi bi-bar-chart-line"></i>
                     </button>
                     <button class="btn btn-sm btn-tg" onclick="loadChatHistory('${chat.id}')" title="Загрузить историю">
