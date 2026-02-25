@@ -650,7 +650,7 @@ async function loadMessages() {
         if (data.messages && data.messages.length > 0) {
             console.log(`✅ Загружено ${data.messages.length} сообщений (страница ${messagePage + 1})`);
             tbody.innerHTML = data.messages.map(msg => `
-                <tr>
+                <tr onclick="showMessageDetails('${msg.chat_id}', '${msg.message_id}')" style="cursor: pointer;">
                     <td style="white-space: nowrap;">
                         ${escapeHtml(msg.chat_title || 'Unknown')}
                         <br><small class="text-muted">ID: ${msg.message_id}</small>
@@ -665,17 +665,6 @@ async function loadMessages() {
                     </td>
                     <td style="white-space: nowrap;">
                         ${formatDate(msg.message_date)}
-                        <div class="mt-1">
-                            <button class="btn btn-sm btn-outline-info" onclick="showMessageRaw('${msg.chat_id}', '${msg.message_id}')" title="RAW данные">
-                                <i class="bi bi-code-slash"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-warning" onclick="showMessageEdits('${msg.chat_id}', '${msg.message_id}')" title="История редактирований">
-                                <i class="bi bi-pencil-square"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="showMessageEvents('${msg.chat_id}', '${msg.message_id}')" title="События">
-                                <i class="bi bi-activity"></i>
-                            </button>
-                        </div>
                     </td>
                 </tr>
             `).join('');
@@ -1405,8 +1394,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // НОВЫЕ ФУНКЦИИ ДЛЯ БД V6
 // ============================================================
 
-// Показать RAW данные сообщения
-async function showMessageRaw(chatId, messageId) {
+// Показать детали сообщения
+async function showMessageDetails(chatId, messageId) {
     try {
         console.log('📄 Загрузка RAW данных сообщения:', chatId, messageId);
         const result = await apiRequest(`/message_raw?chat_id=${chatId}&message_id=${messageId}`);
@@ -1419,68 +1408,6 @@ async function showMessageRaw(chatId, messageId) {
         addLog(`RAW данные сообщения ${messageId} загружены`, 'info');
     } catch (e) {
         console.error('Ошибка загрузки RAW:', e);
-        alert('Ошибка: ' + e.message);
-    }
-}
-
-// Показать историю редактирований
-async function showMessageEdits(chatId, messageId) {
-    try {
-        console.log('📝 Загрузка истории редактирований:', chatId, messageId);
-        const result = await apiRequest(`/message_edits?chat_id=${chatId}&message_id=${messageId}`);
-        
-        const modal = new bootstrap.Modal(document.getElementById('messageEditsModal'));
-        const tbody = document.getElementById('editsTableBody');
-        
-        if (result.edits.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">История редактирований пуста</td></tr>';
-        } else {
-            tbody.innerHTML = result.edits.map((edit, idx) => `
-                <tr>
-                    <td>${idx + 1}</td>
-                    <td>${formatDate(edit.edit_date)}</td>
-                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.old_text || '[нет данных]')}</pre></td>
-                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.new_text || '[нет данных]')}</pre></td>
-                </tr>
-            `).join('');
-        }
-        
-        document.getElementById('editsMessageId').textContent = `Сообщение ${messageId}`;
-        document.getElementById('editsCount').textContent = result.count;
-        modal.show();
-        
-        addLog(`История редактирований сообщения ${messageId} загружена (${result.count} записей)`, 'info');
-    } catch (e) {
-        console.error('Ошибка загрузки редактирований:', e);
-        alert('Ошибка: ' + e.message);
-    }
-}
-
-// Показать события сообщения
-async function showMessageEvents(chatId, messageId) {
-    try {
-        console.log('📊 Загрузка событий сообщения:', chatId, messageId);
-        const result = await apiRequest(`/message_events?chat_id=${chatId}&message_id=${messageId || ''}`);
-        
-        const modal = new bootstrap.Modal(document.getElementById('messageEventsModal'));
-        const tbody = document.getElementById('eventsTableBody');
-        
-        if (result.events.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">События не найдены</td></tr>';
-        } else {
-            tbody.innerHTML = result.events.map(event => `
-                <tr>
-                    <td><span class="badge bg-${getEventBadgeClass(event.event_type)}">${escapeHtml(event.event_type)}</span></td>
-                    <td>${formatDate(event.event_date)}</td>
-                    <td>${event.message_id ? `Сообщение ${event.message_id}` : '-'}</td>
-                </tr>
-            `).join('');
-        }
-        
-        modal.show();
-        addLog(`События загружены (${result.count} записей)`, 'info');
-    } catch (e) {
-        console.error('Ошибка загрузки событий:', e);
         alert('Ошибка: ' + e.message);
     }
 }
@@ -1935,4 +1862,83 @@ function copyRawData() {
         console.error('Ошибка копирования:', err);
         alert('Не удалось скопировать');
     });
+}
+
+// Показать детали сообщения
+async function showMessageDetails(chatId, messageId) {
+    try {
+        console.log('📄 Загрузка деталей сообщения:', chatId, messageId);
+        
+        // Загружаем RAW данные
+        const rawData = await apiRequest(`/message_raw?chat_id=${chatId}&message_id=${messageId}`);
+        
+        // Загружаем редактирования
+        const editsData = await apiRequest(`/message_edits?chat_id=${chatId}&message_id=${messageId}`);
+        
+        // Загружаем события
+        const eventsData = await apiRequest(`/message_events?chat_id=${chatId}&message_id=${messageId}`);
+        
+        // Заполняем информацию
+        const data = rawData.data;
+        document.getElementById('msgDetailChat').textContent = data.chat_title || 'Unknown';
+        document.getElementById('msgDetailId').textContent = messageId;
+        document.getElementById('msgDetailSender').textContent = data.sender_name || 'Unknown';
+        document.getElementById('msgDetailDate').textContent = formatDate(data.date);
+        document.getElementById('msgDetailText').textContent = data.text || '[нет текста]';
+        
+        // RAW данные
+        document.getElementById('rawDataContent').textContent = JSON.stringify(data, null, 2);
+        
+        // Редактирования
+        const editsBody = document.getElementById('editsTableBody');
+        const editsBadge = document.getElementById('editsBadge');
+        const editsEmpty = document.getElementById('editsEmpty');
+        
+        editsBadge.textContent = editsData.count;
+        
+        if (editsData.edits && editsData.edits.length > 0) {
+            editsEmpty.style.display = 'none';
+            editsBody.innerHTML = editsData.edits.map((edit, idx) => `
+                <tr>
+                    <td>${idx + 1}</td>
+                    <td>${formatDate(edit.edit_date)}</td>
+                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.old_text || '[нет данных]')}</pre></td>
+                    <td><pre class="text-truncate" style="max-width: 300px;">${escapeHtml(edit.new_text || '[нет данных]')}</pre></td>
+                </tr>
+            `).join('');
+        } else {
+            editsEmpty.style.display = 'block';
+            editsBody.innerHTML = '';
+        }
+        
+        // События
+        const eventsBody = document.getElementById('eventsTableBody');
+        const eventsBadge = document.getElementById('eventsBadge');
+        const eventsEmpty = document.getElementById('eventsEmpty');
+        
+        eventsBadge.textContent = eventsData.count;
+        
+        if (eventsData.events && eventsData.events.length > 0) {
+            eventsEmpty.style.display = 'none';
+            eventsBody.innerHTML = eventsData.events.map(event => `
+                <tr>
+                    <td><span class="badge bg-${getEventBadgeClass(event.event_type)}">${escapeHtml(event.event_type)}</span></td>
+                    <td>${formatDate(event.event_date)}</td>
+                    <td>${event.event_data ? escapeHtml(JSON.stringify(event.event_data)) : '-'}</td>
+                </tr>
+            `).join('');
+        } else {
+            eventsEmpty.style.display = 'block';
+            eventsBody.innerHTML = '';
+        }
+        
+        // Показываем модальное окно
+        const modal = new bootstrap.Modal(document.getElementById('messageDetailsModal'));
+        modal.show();
+        
+        addLog(`Детали сообщения ${messageId} загружены`, 'info');
+    } catch (e) {
+        console.error('Ошибка загрузки деталей:', e);
+        alert('Ошибка: ' + e.message);
+    }
 }
