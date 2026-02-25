@@ -1691,36 +1691,48 @@ async function showMediaGallery(chatId = null, mediaType = null) {
         if (chatId) params.append('chat_id', chatId);
         if (mediaType) params.append('media_type', mediaType);
         params.append('limit', 50);
-        
+
         const result = await apiRequest(`/media_gallery?${params.toString()}`);
-        
+
         const modal = new bootstrap.Modal(document.getElementById('mediaGalleryModal'));
         const gallery = document.getElementById('mediaGalleryContent');
-        
+
         if (result.media.length === 0) {
             gallery.innerHTML = '<p class="text-center text-muted">Медиа не найдено</p>';
         } else {
-            gallery.innerHTML = `
-                <div class="row g-3">
-                    ${result.media.map(msg => `
-                        <div class="col-md-4 col-lg-3">
-                            <div class="card h-100">
-                                <div class="card-body">
-                                    <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
-                                    <p class="card-text text-truncate">${escapeHtml(msg.text_preview || '[медиа]')}</p>
-                                    <span class="badge bg-${getFileTypeBadgeClass(msg.media_type)}">${msg.media_type}</span>
-                                    <small class="d-block mt-2 text-muted">${formatDate(msg.message_date)}</small>
+            // Фильтруем только фото для отображения
+            const photos = result.media.filter(m => m.media_type === 'photo');
+
+            if (photos.length === 0) {
+                gallery.innerHTML = '<p class="text-center text-muted">Фото не найдено</p>';
+            } else {
+                gallery.innerHTML = `
+                    <div class="row g-3">
+                        ${photos.map(msg => `
+                            <div class="col-md-4 col-lg-3">
+                                <div class="card h-100">
+                                    <div class="card-body text-center" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                                        <i class="bi bi-image" style="font-size: 4rem; color: white;"></i>
+                                    </div>
+                                    <div class="card-body">
+                                        <small class="text-muted">${escapeHtml(msg.chat_title || '')}</small>
+                                        <p class="card-text text-truncate small">${escapeHtml(msg.text_preview || '')}</p>
+                                        <div class="d-flex justify-content-between align-items-center mt-2">
+                                            <span class="badge bg-info">Фото</span>
+                                            <small class="text-muted">${formatDate(msg.message_date)}</small>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
+                        `).join('')}
+                    </div>
+                `;
+            }
         }
-        
+
         document.getElementById('mediaGalleryCount').textContent = result.count;
         modal.show();
-        
+
         addLog(`Галерея медиа загружена: ${result.count} элементов`, 'info');
     } catch (e) {
         console.error('Ошибка загрузки галереи:', e);
