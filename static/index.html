@@ -685,77 +685,115 @@
     <!-- НОВЫЕ МОДАЛЬНЫЕ ОКНА ДЛЯ БД V6 -->
     <!-- ============================================================ -->
 
-    <!-- RAW данные сообщения -->
-    <div class="modal fade" id="messageRawModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+    <!-- Детали сообщения -->
+    <div class="modal fade" id="messageDetailsModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-code-slash"></i> RAW данные</h5>
+                    <h5 class="modal-title"><i class="bi bi-chat-text"></i> Детали сообщения</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <h6 id="rawMessageId" class="mb-3"></h6>
-                    <pre id="rawDataContent" class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow-y: auto;"></pre>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-light" onclick="copyRawData()">
-                        <i class="bi bi-clipboard"></i> Копировать
-                    </button>
-                    <button type="button" class="btn btn-tg" data-bs-dismiss="modal">Закрыть</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- История редактирований -->
-    <div class="modal fade" id="messageEditsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-pencil-square"></i> История редактирований</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <h6 id="editsMessageId" class="mb-2"></h6>
-                    <small class="text-muted">Записей: <span id="editsCount">0</span></small>
-                    <div class="table-responsive mt-3">
-                        <table class="table table-dark table-sm">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Дата</th>
-                                    <th>Старый текст</th>
-                                    <th>Новый текст</th>
-                                </tr>
-                            </thead>
-                            <tbody id="editsTableBody"></tbody>
-                        </table>
+                    <!-- Информация о сообщении -->
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <i class="bi bi-info-circle"></i> Информация
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3">
+                                    <strong>Чат:</strong><br>
+                                    <span id="msgDetailChat">-</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>ID сообщения:</strong><br>
+                                    <span id="msgDetailId">-</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Отправитель:</strong><br>
+                                    <span id="msgDetailSender">-</span>
+                                </div>
+                                <div class="col-md-3">
+                                    <strong>Дата:</strong><br>
+                                    <span id="msgDetailDate">-</span>
+                                </div>
+                            </div>
+                            <hr>
+                            <div class="mb-2">
+                                <strong>Текст:</strong>
+                            </div>
+                            <div class="p-3 bg-dark rounded" id="msgDetailText"></div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- События сообщений -->
-    <div class="modal fade" id="messageEventsModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title"><i class="bi bi-activity"></i> События</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="table-responsive">
-                        <table class="table table-dark table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Тип</th>
-                                    <th>Дата</th>
-                                    <th>Сообщение</th>
-                                </tr>
-                            </thead>
-                            <tbody id="eventsTableBody"></tbody>
-                        </table>
+                    <!-- Вкладки -->
+                    <ul class="nav nav-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-raw">
+                                <i class="bi bi-code-slash"></i> RAW
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-edits">
+                                <i class="bi bi-pencil-square"></i> Редактирования
+                                <span class="badge bg-secondary" id="editsBadge">0</span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-events">
+                                <i class="bi bi-activity"></i> События
+                                <span class="badge bg-secondary" id="eventsBadge">0</span>
+                            </button>
+                        </li>
+                    </ul>
+
+                    <!-- Содержимое вкладок -->
+                    <div class="tab-content p-3 border border-top-0 bg-dark">
+                        <!-- RAW данные -->
+                        <div class="tab-pane fade show active" id="tab-raw">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span>Полные RAW данные сообщения</span>
+                                <button class="btn btn-sm btn-outline-light" onclick="copyRawData()">
+                                    <i class="bi bi-clipboard"></i> Копировать
+                                </button>
+                            </div>
+                            <pre id="rawDataContent" class="bg-dark text-light p-3 rounded" style="max-height: 400px; overflow-y: auto; font-size: 12px;"></pre>
+                        </div>
+
+                        <!-- История редактирований -->
+                        <div class="tab-pane fade" id="tab-edits">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Дата</th>
+                                            <th>Старый текст</th>
+                                            <th>Новый текст</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="editsTableBody"></tbody>
+                                </table>
+                            </div>
+                            <p class="text-muted text-center" id="editsEmpty" style="display: none;">История редактирований пуста</p>
+                        </div>
+
+                        <!-- События -->
+                        <div class="tab-pane fade" id="tab-events">
+                            <div class="table-responsive">
+                                <table class="table table-dark table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Тип</th>
+                                            <th>Дата</th>
+                                            <th>Данные</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="eventsTableBody"></tbody>
+                                </table>
+                            </div>
+                            <p class="text-muted text-center" id="eventsEmpty" style="display: none;">События не найдены</p>
+                        </div>
                     </div>
                 </div>
             </div>
