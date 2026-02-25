@@ -1501,33 +1501,42 @@ async function loadFilesList() {
         const tbody = document.getElementById('filesListBody');
 
         if (result.media.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Файлы не найдены</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">Файлы не найдены</td></tr>';
         } else {
             const apiKey = localStorage.getItem('telegrab_api_key') || '';
-            tbody.innerHTML = result.media.map(msg => `
+            tbody.innerHTML = result.media.map(msg => {
+                // Получаем имя файла из RAW данных или генерируем
+                let fileName = msg.file_name || `${getMediaTypeName(msg.media_type)}_${msg.message_id}`;
+                if (!fileName.includes('.')) {
+                    const ext = getFileExtension(msg.media_type);
+                    fileName = `${fileName}.${ext}`;
+                }
+
+                return `
                 <tr>
                     <td><small>${escapeHtml(msg.chat_title || '')}</small></td>
                     <td><span class="badge bg-${getFileTypeBadgeClass(msg.media_type)}">${getMediaTypeName(msg.media_type)}</span></td>
                     <td>
                         ${['photo', 'video', 'gif', 'document'].includes(msg.media_type) ? `
-                            <img src="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
-                                 alt="${getMediaTypeName(msg.media_type)}" 
+                            <img src="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}"
+                                 alt="${escapeHtml(fileName)}"
                                  style="height: 50px; width: 50px; object-fit: cover; border-radius: 4px;"
                                  onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';">
                             <i class="bi ${getMediaIcon(msg.media_type)}" style="font-size: 1.5rem; display: none;"></i>
                         ` : `<i class="bi ${getMediaIcon(msg.media_type)}" style="font-size: 1.5rem;"></i>`}
                     </td>
+                    <td><small>${escapeHtml(fileName)}</small></td>
                     <td><small>${formatDate(msg.message_date)}</small></td>
                     <td>
-                        <a href="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
-                           download="${getMediaTypeName(msg.media_type)}_${msg.message_id}"
+                        <a href="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}"
+                           download="${fileName}"
                            class="btn btn-sm btn-outline-light"
                            title="Скачать">
                             <i class="bi bi-download"></i>
                         </a>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
 
         document.getElementById('filesListCount').textContent = result.count;
@@ -1854,6 +1863,19 @@ function getMediaTypeName(mediaType) {
         'sticker': 'Стикер'
     };
     return names[mediaType] || mediaType || 'Медиа';
+}
+
+function getFileExtension(mediaType) {
+    const extensions = {
+        'photo': 'jpg',
+        'video': 'mp4',
+        'document': 'file',
+        'audio': 'mp3',
+        'voice': 'ogg',
+        'gif': 'gif',
+        'sticker': 'webp'
+    };
+    return extensions[mediaType] || 'file';
 }
 
 // Копировать RAW данные
