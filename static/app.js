@@ -307,58 +307,30 @@ async function loadChats() {
         // Загружаем статистику по сообщениям из БД
         const dbChats = await apiRequest('/chats');
         console.log('📦 Чаты из БД:', dbChats);
-        
-        // Создаём мапу статистики с суммированием по названию
+
+        // Создаём мапу статистики по chat_id
         const chatStats = {};
         (dbChats.chats || []).forEach(chat => {
-            const chatTitle = chat.chat_title;
             const chatId = String(chat.chat_id);
-            
-            // Суммируем сообщения для чатов с одинаковым названием
-            if (!chatStats[chatTitle]) {
-                chatStats[chatTitle] = {
-                    message_count: 0,
-                    fully_loaded: false,
-                    ids: [] // Сохраняем все ID для этого чата
-                };
-            }
-            chatStats[chatTitle].message_count += chat.message_count || 0;
-            chatStats[chatTitle].ids.push(chatId);
-            
-            // fully_loaded = true только если все ID загружены полностью
-            if (chat.fully_loaded) {
-                chatStats[chatTitle].fully_loaded = true;
-            }
-            
-            // Добавляем альтернативный формат ID
+            chatStats[chatId] = {
+                message_count: chat.message_count || 0,
+                fully_loaded: chat.fully_loaded || false,
+                chat_title: chat.chat_title
+            };
+
+            // Добавляем альтернативный формат ID (без -100)
             if (chatId.startsWith('-100')) {
                 const altId = chatId.substring(4);
-                chatStats[chatTitle].ids.push(altId);
+                chatStats[altId] = chatStats[chatId];
             }
         });
-        
+
         console.log('📊 Статистика чатов:', chatStats);
 
         // Объединяем данные
         allChatsData = (dialogsData.dialogs || []).map(dialog => {
-            // Пытаемся найти по title
-            let stats = chatStats[dialog.title];
-            
-            // Если не нашли, пробуем по chat_id
-            if (!stats) {
-                // Ищем чат с таким ID в статистике
-                for (const [title, data] of Object.entries(chatStats)) {
-                    if (data.ids.includes(String(dialog.id))) {
-                        stats = data;
-                        console.log(`🔍 Найдено совпадение по ID для ${dialog.title}: ${title}`);
-                        break;
-                    }
-                }
-            }
-            
-            if (!stats) {
-                stats = { message_count: 0, fully_loaded: false };
-            }
+            const dialogId = String(dialog.id);
+            const stats = chatStats[dialogId] || { message_count: 0, fully_loaded: false, chat_title: dialog.title };
 
             return {
                 id: dialog.id,
