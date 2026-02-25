@@ -1574,7 +1574,7 @@ async function loadFilesList() {
         const tbody = document.getElementById('filesListBody');
 
         if (result.media.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Файлы не найдены</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Файлы не найдены</td></tr>';
         } else {
             const apiKey = localStorage.getItem('telegrab_api_key') || '';
             tbody.innerHTML = result.media.map(msg => `
@@ -1591,6 +1591,14 @@ async function loadFilesList() {
                         ` : `<i class="bi ${getMediaIcon(msg.media_type)}" style="font-size: 1.5rem;"></i>`}
                     </td>
                     <td><small>${formatDate(msg.message_date)}</small></td>
+                    <td>
+                        <a href="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
+                           download="${getMediaTypeName(msg.media_type)}_${msg.message_id}"
+                           class="btn btn-sm btn-outline-light"
+                           title="Скачать">
+                            <i class="bi bi-download"></i>
+                        </a>
+                    </td>
                 </tr>
             `).join('');
         }
@@ -1825,12 +1833,16 @@ function getMediaCardHtml(msg) {
     
     // Получаем API ключ для загрузки
     const apiKey = localStorage.getItem('telegrab_api_key') || '';
+    
+    // URL для скачивания
+    const downloadUrl = `/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}`;
+    const downloadName = `${typeName}_${msg.message_id}`;
 
     return `
         <div class="col-md-4 col-lg-3">
             <div class="card h-100">
                 ${canPreview ? `
-                    <img src="/media/${msg.chat_id}/${msg.message_id}?api_key=${encodeURIComponent(apiKey)}" 
+                    <img src="${downloadUrl}" 
                          class="card-img-top" 
                          alt="${escapeHtml(typeName)}" 
                          style="height: 200px; object-fit: cover;"
@@ -1850,6 +1862,12 @@ function getMediaCardHtml(msg) {
                         <span class="badge ${badgeClass}">${typeName}</span>
                         <small class="text-muted">${formatDate(msg.message_date)}</small>
                     </div>
+                    <a href="${downloadUrl}" 
+                       download="${downloadName}"
+                       class="btn btn-sm btn-outline-primary mt-2 w-100"
+                       title="Скачать">
+                        <i class="bi bi-download"></i> Скачать
+                    </a>
                 </div>
             </div>
         </div>
