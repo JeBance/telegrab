@@ -790,7 +790,9 @@ class DatabaseV6:
                 'file_name': raw.get('file_name'),
                 'file_size': raw.get('file_size'),
                 'has_media': bool(data.get('has_media')),
-                'views': data.get('views')
+                'views': data.get('views'),
+                # Добавляем файлы для вкладки
+                'files': raw.get('files') or []
             })
 
         conn.close()

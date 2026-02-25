@@ -1928,9 +1928,9 @@ async function showMessageDetails(chatId, messageId) {
         const eventsBody = document.getElementById('eventsTableBody');
         const eventsBadge = document.getElementById('eventsBadge');
         const eventsEmpty = document.getElementById('eventsEmpty');
-        
+
         eventsBadge.textContent = eventsData.count;
-        
+
         if (eventsData.events && eventsData.events.length > 0) {
             eventsEmpty.style.display = 'none';
             eventsBody.innerHTML = eventsData.events.map(event => `
@@ -1944,11 +1944,45 @@ async function showMessageDetails(chatId, messageId) {
             eventsEmpty.style.display = 'block';
             eventsBody.innerHTML = '';
         }
-        
+
+        // Файлы
+        const filesBody = document.getElementById('filesTableBody');
+        const filesBadge = document.getElementById('filesBadge');
+        const filesEmpty = document.getElementById('filesEmpty');
+
+        // Получаем файлы из RAW данных
+        const files = data.files || [];
+        filesBadge.textContent = files.length;
+
+        if (files.length > 0) {
+            filesEmpty.style.display = 'none';
+            const apiKey = localStorage.getItem('telegrab_api_key') || '';
+            filesBody.innerHTML = files.map((file, idx) => `
+                <tr>
+                    <td><span class="badge bg-${getFileTypeBadgeClass(file.file_type)}">${getMediaTypeName(file.file_type)}</span></td>
+                    <td>${escapeHtml(file.file_name || 'unnamed')}</td>
+                    <td>${formatFileSize(file.file_size || 0)}</td>
+                    <td>
+                        ${file.file_id ? `
+                            <a href="/media/${chatId}/${messageId}?api_key=${encodeURIComponent(apiKey)}"
+                               download="${escapeHtml(file.file_name || 'file')}"
+                               class="btn btn-sm btn-outline-light"
+                               title="Скачать">
+                                <i class="bi bi-download"></i>
+                            </a>
+                        ` : '-'}
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            filesEmpty.style.display = 'block';
+            filesBody.innerHTML = '';
+        }
+
         // Показываем модальное окно
         const modal = new bootstrap.Modal(document.getElementById('messageDetailsModal'));
         modal.show();
-        
+
         addLog(`Детали сообщения ${messageId} загружены`, 'info');
     } catch (e) {
         console.error('Ошибка загрузки деталей:', e);
