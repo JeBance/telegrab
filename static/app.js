@@ -2002,3 +2002,362 @@ async function showMessageDetails(chatId, messageId) {
         alert('Ошибка: ' + e.message);
     }
 }
+
+// ============================================================
+// УПРАВЛЕНИЕ БАЗОЙ ДАННЫХ
+// ============================================================
+
+let databaseModal = null;
+
+// Показать модальное окно БД
+function showDatabaseModal() {
+    console.log('📊 Открытие окна управления БД...');
+    
+    if (!databaseModal) {
+        databaseModal = new bootstrap.Modal(document.getElementById('databaseModal'));
+    }
+    
+    databaseModal.show();
+    loadDatabaseStats();
+    loadChatFilterForExport();
+}
+
+// Загрузка статистики БД
+async function loadDatabaseStats() {
+    try {
+        const stats = await apiRequest('/stats');
+        
+        // Корректно получаем значения, преобразуем к числам
+        const totalMessages = parseInt(stats.total_messages) || 0;
+        const totalChats = parseInt(stats.total_chats) || 0;
+        const totalFiles = parseInt(stats.total_files) || 0;
+        const messagesWithMedia = parseInt(stats.messages_with_media) || 0;
+        const deletedMessages = parseInt(stats.deleted_messages) || 0;
+        const totalEdits = parseInt(stats.total_edits) || 0;
+        const totalFilesSize = parseInt(stats.total_files_size) || 0;
+        
+        document.getElementById('dbTotalMessages').textContent = totalMessages.toLocaleString('ru-RU');
+        document.getElementById('dbTotalChats').textContent = totalChats.toLocaleString('ru-RU');
+        document.getElementById('dbTotalFiles').textContent = totalFiles.toLocaleString('ru-RU');
+        document.getElementById('dbMediaMessages').textContent = messagesWithMedia.toLocaleString('ru-RU');
+        document.getElementById('dbDeletedMessages').textContent = deletedMessages.toLocaleString('ru-RU');
+        document.getElementById('dbTotalEdits').textContent = totalEdits.toLocaleString('ru-RU');
+        
+        // Считаем размер БД
+        const dbSize = await getDatabaseSize();
+        document.getElementById('dbSize').textContent = dbSize;
+        
+        console.log('✅ Статистика БД загружена:', {
+            totalMessages,
+            totalChats,
+            totalFiles,
+            messagesWithMedia,
+            deletedMessages,
+            totalEdits,
+            dbSize
+        });
+    } catch (e) {
+        console.error('Ошибка загрузки статистики БД:', e);
+        // Находим таблицу и показываем ошибку в ней
+        const tableBody = document.querySelector('#databaseModal tbody');
+        if (tableBody) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center">
+                        <div class="alert alert-danger mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки статистики: ${escapeHtml(e.message)}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+}
+
+// Получение размера БД
+async function getDatabaseSize() {
+    try {
+        // Запрашиваем размер через stats (теперь там есть db_size)
+        const stats = await apiRequest('/stats');
+        const sizeBytes = parseInt(stats.db_size) || 0;
+        
+        // Форматируем размер
+        if (sizeBytes < 1024) {
+            return `${sizeBytes} B`;
+        } else if (sizeBytes < 1024 * 1024) {
+            return `${(sizeBytes / 1024).toFixed(1)} KB`;
+        } else if (sizeBytes < 1024 * 1024 * 1024) {
+            return `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+        } else {
+            return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        }
+    } catch (e) {
+        return 'N/A';
+    }
+}
+
+// Загрузка фильтра чатов для экспорта
+async function loadChatFilterForExport() {
+    try {
+        const chats = await apiRequest('/chats');
+        const select = document.getElementById('exportChatId');
+        
+        select.innerHTML = '<option value="">Все чаты</option>';
+        
+        if (chats.chats && chats.chats.length > 0) {
+            chats.chats.forEach(chat => {
+                const option = document.createElement('option');
+                option.value = chat.chat_id;
+                option.textContent = `${chat.chat_title} (${chat.message_count || 0})`;
+                select.appendChild(option);
+            });
+        }
+    } catch (e) {
+        console.error('Ошибка загрузки списка чатов:', e);
+    }
+}
+
+// Экспорт базы данных
+async function exportDatabase() {
+    const format = document.getElementById('exportFormat').value;
+    const chatId = document.getElementById('exportChatId').value;
+    const limit = parseInt(document.getElementById('exportLimit').value) || 10000;
+    const statusEl = document.getElementById('exportStatus');
+    
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Подготовка экспорта...</div>';
+    
+    try {
+        let url = `/export?format=${format}&limit=${limit}`;
+        if (chatId) url += `&chat_id=${chatId}`;
+        
+        const data = await apiRequest(url);
+        
+        // Создаём файл для скачивания
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const urlDownload = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = urlDownload;
+        a.download = `telegrab_export_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(urlDownload);
+        
+        statusEl.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> Экспорт завершён: ${data.count || 0} сообщений
+            </div>
+        `;
+        
+        addLog(`Экспорт БД: ${data.count || 0} сообщений в формате ${format}`, 'success');
+    } catch (e) {
+        console.error('Ошибка экспорта:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка экспорта: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}
+
+// Экспорт всех чатов
+async function exportAllChats() {
+    const statusEl = document.getElementById('exportStatus');
+    
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Подготовка экспорта всех чатов...</div>';
+    
+    try {
+        const data = await apiRequest('/export?limit=100000');
+        
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const urlDownload = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = urlDownload;
+        a.download = `telegrab_all_chats_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(urlDownload);
+        
+        statusEl.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> Экспорт завершён: ${data.count || 0} сообщений
+            </div>
+        `;
+        
+        addLog(`Экспорт всех чатов: ${data.count || 0} сообщений`, 'success');
+    } catch (e) {
+        console.error('Ошибка экспорта всех чатов:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка экспорта: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}
+
+// Импорт базы данных
+async function importDatabase() {
+    const fileInput = document.getElementById('importFile');
+    const skipDuplicates = document.getElementById('importSkipDuplicates').checked;
+    const updateEdits = document.getElementById('importUpdateEdits').checked;
+    const statusEl = document.getElementById('importStatus');
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        statusEl.innerHTML = `
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i> Выберите файл для импорта
+            </div>
+        `;
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Загрузка файла...</div>';
+    
+    try {
+        // Читаем файл
+        const reader = new FileReader();
+        
+        reader.onload = async function(e) {
+            try {
+                const data = JSON.parse(e.target.result);
+                
+                statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Импорт данных...</div>';
+                
+                // Отправляем на сервер
+                const result = await apiRequest('/import', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        data: data,
+                        skip_duplicates: skipDuplicates,
+                        update_edits: updateEdits
+                    })
+                });
+                
+                statusEl.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle"></i> Импорт завершён: ${result.imported || 0} сообщений
+                    </div>
+                `;
+                
+                addLog(`Импорт БД: ${result.imported || 0} сообщений`, 'success');
+                
+                // Обновляем статистику
+                setTimeout(() => loadDatabaseStats(), 1000);
+                
+            } catch (parseError) {
+                console.error('Ошибка парсинга JSON:', parseError);
+                statusEl.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Ошибка парсинга JSON: ${escapeHtml(parseError.message)}
+                    </div>
+                `;
+            }
+        };
+        
+        reader.onerror = function() {
+            statusEl.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Ошибка чтения файла
+                </div>
+            `;
+        };
+        
+        reader.readAsText(file);
+        
+    } catch (e) {
+        console.error('Ошибка импорта:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка импорта: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}
+
+// Оптимизация БД
+async function optimizeDatabase() {
+    const statusEl = document.getElementById('dbOperationStatus');
+    
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Оптимизация БД...</div>';
+    
+    try {
+        const result = await apiRequest('/optimize_database', { method: 'POST' });
+        
+        statusEl.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${result.message || 'Оптимизация завершена'}
+            </div>
+        `;
+        
+        addLog('Оптимизация БД завершена', 'success');
+        setTimeout(() => loadDatabaseStats(), 1000);
+        
+    } catch (e) {
+        console.error('Ошибка оптимизации:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка оптимизации: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}
+
+// Создание бэкапа БД
+async function backupDatabase() {
+    const statusEl = document.getElementById('dbOperationStatus');
+    
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Создание бэкапа...</div>';
+    
+    try {
+        const result = await apiRequest('/backup_database', { method: 'POST' });
+        
+        statusEl.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${result.message || 'Бэкап создан'}
+            </div>
+        `;
+        
+        addLog('Бэкап БД создан', 'success');
+        
+    } catch (e) {
+        console.error('Ошибка создания бэкапа:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка создания бэкапа: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}
+
+// Очистка БД
+async function clearDatabase() {
+    if (!confirm('⚠️  Вы уверены что хотите очистить базу данных?\n\nВсе сообщения будут удалены.\n\nЭто действие НЕОБРАТИМО!')) {
+        return;
+    }
+    
+    const statusEl = document.getElementById('dbOperationStatus');
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Очистка БД...</div>';
+    
+    try {
+        const result = await apiRequest('/clear_database', { method: 'POST' });
+        
+        statusEl.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> ${result.message || 'БД очищена'}
+            </div>
+        `;
+        
+        addLog('БД очищена', 'warning');
+        setTimeout(() => loadDatabaseStats(), 1000);
+        
+    } catch (e) {
+        console.error('Ошибка очистки:', e);
+        statusEl.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Ошибка очистки: ${escapeHtml(e.message)}
+            </div>
+        `;
+    }
+}

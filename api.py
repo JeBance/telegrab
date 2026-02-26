@@ -428,7 +428,16 @@ async def health_check():
 @app.get("/stats")
 async def get_stats(api_key: str = Depends(get_api_key)):
     """Статистика"""
-    return db.get_stats()
+    stats = db.get_stats()
+    
+    # Добавляем размер файла БД
+    import os
+    if os.path.exists(db.db_path):
+        stats['db_size'] = os.path.getsize(db.db_path)
+    else:
+        stats['db_size'] = 0
+    
+    return stats
 
 @app.get("/chats")
 async def get_chats(api_key: str = Depends(get_api_key)):
@@ -689,6 +698,209 @@ async def clear_database(api_key: str = Depends(get_api_key)):
         db.clear_database()
         return {'status': 'ok', 'message': 'База данных очищена'}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================
+# ENDPOINTS ДЛЯ УПРАВЛЕНИЯ БД (ИМПОРТ/ЭКСПОРТ/ОПТИМИЗАЦИЯ)
+# ============================================================
+
+@app.get("/export")
+async def export_messages(
+    format: str = "json",
+    chat_id: int = None,
+    limit: int = 10000,
+    api_key: str = Depends(get_api_key)
+):
+    """Экспорт сообщений в различных форматах"""
+    try:
+        messages = db.get_messages(chat_id=chat_id, limit=limit)
+        
+        if format == "raw":
+            # RAW экспорт - полные данные из messages_raw
+            raw_messages = []
+            for msg in messages:
+                raw_data = db.get_message_raw(msg.get('chat_id'), msg.get('message_id'))
+                if raw_data:
+                    raw_messages.append(raw_data)
+            return {
+                'exported_at': datetime.now().isoformat(),
+                'count': len(raw_messages),
+                'format': 'raw',
+                'messages': raw_messages
+            }
+        elif format == "csv":
+            # CSV экспорт (возвращаем как JSON для конвертации на клиенте)
+            csv_data = []
+            for msg in messages:
+                csv_data.append({
+                    'chat_id': msg.get('chat_id'),
+                    'chat_title': msg.get('chat_title'),
+                    'message_id': msg.get('message_id'),
+                    'date': msg.get('message_date'),
+                    'sender': msg.get('sender_name'),
+                    'text': msg.get('text_preview'),
+                    'has_media': msg.get('has_media'),
+                    'media_type': msg.get('media_type'),
+                    'views': msg.get('views')
+                })
+            return {
+                'exported_at': datetime.now().isoformat(),
+                'count': len(csv_data),
+                'format': 'csv',
+                'messages': csv_data
+            }
+        elif format == "html":
+            # HTML экспорт (возвращаем как JSON для генерации на клиенте)
+            return {
+                'exported_at': datetime.now().isoformat(),
+                'count': len(messages),
+                'format': 'html',
+                'messages': messages
+            }
+        else:
+            # JSON экспорт по умолчанию
+            return {
+                'exported_at': datetime.now().isoformat(),
+                'count': len(messages),
+                'format': 'json',
+                'messages': messages
+            }
+    except Exception as e:
+        logger.error(f"Ошибка экспорта: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/import")
+async def import_messages(
+    data: dict,
+    api_key: str = Depends(get_api_key)
+):
+    """Импорт сообщений из JSON"""
+    try:
+        skip_duplicates = data.get('skip_duplicates', True)
+        update_edits = data.get('update_edits', False)
+        messages = data.get('data', {}).get('messages', [])
+        
+        if not messages:
+            # Пробуем альтернативный формат
+            messages = data.get('messages', [])
+        
+        imported_count = 0
+        skipped_count = 0
+        
+        for msg in messages:
+            try:
+                chat_id = msg.get('chat_id')
+                message_id = msg.get('message_id')
+                
+                if not chat_id or not message_id:
+                    continue
+                
+                # Проверяем дубликаты
+                if skip_duplicates:
+                    existing = db.get_message_raw(chat_id, message_id)
+                    if existing:
+                        skipped_count += 1
+                        continue
+                
+                # Формируем RAW данные
+                raw_data = {
+                    'id': message_id,
+                    'chat_id': chat_id,
+                    'text': msg.get('text', ''),
+                    'sender_name': msg.get('sender', ''),
+                    'date': msg.get('date'),
+                    'media_type': msg.get('media_type'),
+                    'files': []
+                }
+                
+                # Формируем метаданные
+                meta = {
+                    'sender_id': None,
+                    'sender_name': msg.get('sender', ''),
+                    'message_date': msg.get('date'),
+                    'has_media': msg.get('has_media', False),
+                    'media_type': msg.get('media_type'),
+                    'text_preview': msg.get('text', '')[:500],
+                    'has_forward': False,
+                    'has_reply': False,
+                    'views': msg.get('views', 0)
+                }
+                
+                # Сохраняем сообщение
+                if db.save_message_raw(chat_id, message_id, raw_data, meta):
+                    imported_count += 1
+                    
+            except Exception as e:
+                logger.error(f"Ошибка импорта сообщения: {e}")
+                continue
+        
+        return {
+            'status': 'ok',
+            'imported': imported_count,
+            'skipped': skipped_count,
+            'message': f'Импортировано {imported_count} сообщений, пропущено {skipped_count}'
+        }
+    except Exception as e:
+        logger.error(f"Ошибка импорта: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/optimize_database")
+async def optimize_database(api_key: str = Depends(get_api_key)):
+    """Оптимизация базы данных (VACUUM, ANALYZE)"""
+    try:
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        
+        # VACUUM для дефрагментации
+        cursor.execute('VACUUM')
+        
+        # ANALYZE для оптимизации индексов
+        cursor.execute('ANALYZE')
+        
+        conn.commit()
+        conn.close()
+        
+        return {
+            'status': 'ok',
+            'message': 'База данных оптимизирована'
+        }
+    except Exception as e:
+        logger.error(f"Ошибка оптимизации БД: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/backup_database")
+async def backup_database(api_key: str = Depends(get_api_key)):
+    """Создание бэкапа базы данных"""
+    try:
+        import shutil
+        from datetime import datetime
+        
+        # Создаём директорию для бэкапов
+        backup_dir = "data/backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        # Генерируем имя файла бэкапа
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = f"{backup_dir}/telegrab_backup_{timestamp}.db"
+        
+        # Копируем БД
+        shutil.copy2(db.db_path, backup_path)
+        
+        # Удаляем старые бэкапы (храним последние 10)
+        import glob
+        backup_files = sorted(glob.glob(f"{backup_dir}/telegrab_backup_*.db"))
+        if len(backup_files) > 10:
+            for old_file in backup_files[:-10]:
+                os.remove(old_file)
+        
+        return {
+            'status': 'ok',
+            'message': f'Бэкап создан: {backup_path}',
+            'backup_path': backup_path
+        }
+    except Exception as e:
+        logger.error(f"Ошибка создания бэкапа: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================
