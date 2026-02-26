@@ -2027,23 +2027,72 @@ async function loadDatabaseStats() {
     try {
         const stats = await apiRequest('/stats');
         
-        document.getElementById('dbTotalMessages').textContent = stats.total_messages || 0;
-        document.getElementById('dbTotalChats').textContent = stats.total_chats || 0;
-        document.getElementById('dbTotalFiles').textContent = stats.total_files || 0;
-        document.getElementById('dbMediaMessages').textContent = stats.messages_with_media || 0;
-        document.getElementById('dbDeletedMessages').textContent = stats.deleted_messages || 0;
-        document.getElementById('dbTotalEdits').textContent = stats.total_edits || 0;
+        // Корректно получаем значения, преобразуем к числам
+        const totalMessages = parseInt(stats.total_messages) || 0;
+        const totalChats = parseInt(stats.total_chats) || 0;
+        const totalFiles = parseInt(stats.total_files) || 0;
+        const messagesWithMedia = parseInt(stats.messages_with_media) || 0;
+        const deletedMessages = parseInt(stats.deleted_messages) || 0;
+        const totalEdits = parseInt(stats.total_edits) || 0;
+        const totalFilesSize = parseInt(stats.total_files_size) || 0;
         
-        console.log('✅ Статистика БД загружена');
+        document.getElementById('dbTotalMessages').textContent = totalMessages.toLocaleString('ru-RU');
+        document.getElementById('dbTotalChats').textContent = totalChats.toLocaleString('ru-RU');
+        document.getElementById('dbTotalFiles').textContent = totalFiles.toLocaleString('ru-RU');
+        document.getElementById('dbMediaMessages').textContent = messagesWithMedia.toLocaleString('ru-RU');
+        document.getElementById('dbDeletedMessages').textContent = deletedMessages.toLocaleString('ru-RU');
+        document.getElementById('dbTotalEdits').textContent = totalEdits.toLocaleString('ru-RU');
+        
+        // Считаем размер БД
+        const dbSize = await getDatabaseSize();
+        document.getElementById('dbSize').textContent = dbSize;
+        
+        console.log('✅ Статистика БД загружена:', {
+            totalMessages,
+            totalChats,
+            totalFiles,
+            messagesWithMedia,
+            deletedMessages,
+            totalEdits,
+            dbSize
+        });
     } catch (e) {
         console.error('Ошибка загрузки статистики БД:', e);
-        document.getElementById('dbStatsContent').innerHTML = `
-            <div class="col-12">
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки статистики: ${escapeHtml(e.message)}
-                </div>
-            </div>
-        `;
+        // Находим таблицу и показываем ошибку в ней
+        const tableBody = document.querySelector('#databaseModal tbody');
+        if (tableBody) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center">
+                        <div class="alert alert-danger mb-0">
+                            <i class="bi bi-exclamation-triangle"></i> Ошибка загрузки статистики: ${escapeHtml(e.message)}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+    }
+}
+
+// Получение размера БД
+async function getDatabaseSize() {
+    try {
+        // Запрашиваем размер через stats (теперь там есть db_size)
+        const stats = await apiRequest('/stats');
+        const sizeBytes = parseInt(stats.db_size) || 0;
+        
+        // Форматируем размер
+        if (sizeBytes < 1024) {
+            return `${sizeBytes} B`;
+        } else if (sizeBytes < 1024 * 1024) {
+            return `${(sizeBytes / 1024).toFixed(1)} KB`;
+        } else if (sizeBytes < 1024 * 1024 * 1024) {
+            return `${(sizeBytes / (1024 * 1024)).toFixed(2)} MB`;
+        } else {
+            return `${(sizeBytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+        }
+    } catch (e) {
+        return 'N/A';
     }
 }
 

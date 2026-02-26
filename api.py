@@ -428,7 +428,16 @@ async def health_check():
 @app.get("/stats")
 async def get_stats(api_key: str = Depends(get_api_key)):
     """Статистика"""
-    return db.get_stats()
+    stats = db.get_stats()
+    
+    # Добавляем размер файла БД
+    import os
+    if os.path.exists(db.db_path):
+        stats['db_size'] = os.path.getsize(db.db_path)
+    else:
+        stats['db_size'] = 0
+    
+    return stats
 
 @app.get("/chats")
 async def get_chats(api_key: str = Depends(get_api_key)):

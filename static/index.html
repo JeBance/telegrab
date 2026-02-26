@@ -1110,61 +1110,53 @@
                             <i class="bi bi-bar-chart-line"></i> Статистика базы данных
                         </div>
                         <div class="card-body">
-                            <div class="row g-3" id="dbStatsContent">
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-primary bg-opacity-10 text-primary mb-2">
-                                            <i class="bi bi-envelope"></i>
-                                        </div>
-                                        <h3 id="dbTotalMessages">0</h3>
-                                        <h6>Сообщений</h6>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-success bg-opacity-10 text-success mb-2">
-                                            <i class="bi bi-chat-left"></i>
-                                        </div>
-                                        <h3 id="dbTotalChats">0</h3>
-                                        <h6>Чатов</h6>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-info bg-opacity-10 text-info mb-2">
-                                            <i class="bi bi-file-earmark"></i>
-                                        </div>
-                                        <h3 id="dbTotalFiles">0</h3>
-                                        <h6>Файлов</h6>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-warning bg-opacity-10 text-warning mb-2">
-                                            <i class="bi bi-images"></i>
-                                        </div>
-                                        <h3 id="dbMediaMessages">0</h3>
-                                        <h6>С медиа</h6>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-danger bg-opacity-10 text-danger mb-2">
-                                            <i class="bi bi-trash"></i>
-                                        </div>
-                                        <h3 id="dbDeletedMessages">0</h3>
-                                        <h6>Удалённых</h6>
-                                    </div>
-                                </div>
-                                <div class="col-md-4">
-                                    <div class="stat-card p-3 text-center">
-                                        <div class="stat-icon bg-secondary bg-opacity-10 text-secondary mb-2">
-                                            <i class="bi bi-pencil"></i>
-                                        </div>
-                                        <h3 id="dbTotalEdits">0</h3>
-                                        <h6>Редактирований</h6>
-                                    </div>
-                                </div>
+                            <div class="table-responsive">
+                                <table class="table table-dark table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th style="width: 40%"><i class="bi bi-table"></i> Показатель</th>
+                                            <th style="width: 30%" class="text-center"><i class="bi bi-hash"></i> Значение</th>
+                                            <th style="width: 30%" class="text-center"><i class="bi bi-graph-up"></i> Описание</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><i class="bi bi-envelope text-primary"></i> Всего сообщений</td>
+                                            <td class="text-center"><strong id="dbTotalMessages">0</strong></td>
+                                            <td class="text-muted small">Записей в messages_raw</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-chat-left text-success"></i> Всего чатов</td>
+                                            <td class="text-center"><strong id="dbTotalChats">0</strong></td>
+                                            <td class="text-muted small">Уникальных чатов в БД</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-file-earmark text-info"></i> Всего файлов</td>
+                                            <td class="text-center"><strong id="dbTotalFiles">0</strong></td>
+                                            <td class="text-muted small">Уникальных файлов (дедупликация)</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-images text-warning"></i> Сообщений с медиа</td>
+                                            <td class="text-center"><strong id="dbMediaMessages">0</strong></td>
+                                            <td class="text-muted small">Фото, видео, документы</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-trash text-danger"></i> Удалённых сообщений</td>
+                                            <td class="text-center"><strong id="dbDeletedMessages">0</strong></td>
+                                            <td class="text-muted small">Отмечены как deleted</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-pencil text-secondary"></i> Редактирований</td>
+                                            <td class="text-center"><strong id="dbTotalEdits">0</strong></td>
+                                            <td class="text-muted small">История изменений</td>
+                                        </tr>
+                                        <tr>
+                                            <td><i class="bi bi-database text-light"></i> Размер БД</td>
+                                            <td class="text-center"><strong id="dbSize">0 KB</strong></td>
+                                            <td class="text-muted small">Файл telegrab_v6.db</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
