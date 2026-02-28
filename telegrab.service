@@ -1,15 +1,15 @@
 [Unit]
 Description=Telegrab Telegram Archiver
-After=network.target
+After=network.target network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=telegrab
 Group=telegrab
-WorkingDirectory=/opt/telegrab
-Environment="PATH=/opt/telegrab/venv/bin"
-ExecStart=/opt/telegrab/venv/bin/python telegrab.py
+WorkingDirectory=/root/git/telegrab
+Environment="PATH=/root/git/telegrab/venv/bin"
+ExecStart=/root/git/telegrab/venv/bin/python telegrab.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
